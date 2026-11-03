@@ -1,9 +1,18 @@
 # apps/windows-cc/agent_tools.py
 from __future__ import annotations
 
+import subprocess
+import sys
 import urllib.error
+from datetime import datetime, timedelta, timezone
 import urllib.request
 from pathlib import Path
+
+from shell_gate import is_allowlisted, normalize
+
+_SKIP_DIRS = {".git", "__pycache__", "node_modules", ".venv", "venv", "vendor", "dist", "build", ".worktrees"}
+_BIN_EXT = {".exe", ".dll", ".pyd", ".so", ".png", ".jpg", ".jpeg", ".gif", ".ico", ".zip", ".pdf", ".bin", ".pyc", ".woff", ".woff2"}
+_IST = timezone(timedelta(hours=5, minutes=30))
 
 TOOL_SCHEMAS = [
     {
@@ -45,6 +54,39 @@ TOOL_SCHEMAS = [
             "type": "object",
             "properties": {"name": {"type": "string"}},
             "required": ["name"],
+        },
+    },
+    {
+        "name": "code_search",
+        "description": "Case-insensitive text search across files under JARVIS root",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "max_hits": {"type": "integer"},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "memory_note",
+        "description": "Append a timestamped note to memory/agent_notes.md",
+        "parameters": {
+            "type": "object",
+            "properties": {"text": {"type": "string"}},
+            "required": ["text"],
+        },
+    },
+    {
+        "name": "shell",
+        "description": "Run an allowlisted shell command (git status, git log -n N, python -m unittest, dir/ls); others need R3 confirmation",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "cmd": {"type": "string"},
+                "confirmed": {"type": "boolean"},
+            },
+            "required": ["cmd"],
         },
     },
 ]
@@ -137,6 +179,77 @@ class AgentTools:
             "data": {"name": name, "path": str(p), "preview": preview},
         }
 
+    def code_search(self, query: str, max_hits: int = 20) -> dict:
+        q = (query or "").lower()
+        if not q:
+            return {"ok": False, "error": "empty query"}
+        max_hits = max(1, min(int(max_hits or 20), 200))
+        hits = []
+        try:
+            for p in sorted(self.root.rglob("*")):
+                if len(hits) >= max_hits:
+                    break
+                rel = p.relative_to(self.root)
+                if any(part in _SKIP_DIRS for part in rel.parts):
+                    continue
+                if not p.is_file() or p.suffix.lower() in _BIN_EXT:
+                    continue
+                try:
+                    if p.stat().st_size > 1_000_000:
+                        continue
+                    raw = p.read_bytes()
+                except OSError:
+                    continue
+                if b"\0" in raw[:4096]:
+                    continue
+                for i, line in enumerate(raw.decode("utf-8", errors="replace").splitlines(), 1):
+                    if q in line.lower():
+                        hits.append({"path": rel.as_posix(), "line": i, "text": line.strip()[:300]})
+                        if len(hits) >= max_hits:
+                            break
+            return {"ok": True, "data": {"query": query, "hits": hits, "truncated": len(hits) >= max_hits}}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def memory_note(self, text: str) -> dict:
+        text = (text or "").strip()
+        if not text:
+            return {"ok": False, "error": "empty note"}
+        try:
+            p = self.safe_path("memory/agent_notes.md")
+            p.parent.mkdir(parents=True, exist_ok=True)
+            ts = datetime.now(_IST).isoformat(timespec="seconds")
+            with p.open("a", encoding="utf-8") as f:
+                f.write(f"- [{ts}] {text}\n")
+            return {"ok": True, "data": {"path": str(p), "timestamp": ts}}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def shell(self, cmd: str, confirmed: bool = False) -> dict:
+        if not is_allowlisted(cmd) and not confirmed:
+            return {"ok": False, "needs_r3": True, "command": cmd}
+        c = normalize(cmd)
+        if c.lower().startswith("python ") and is_allowlisted(cmd):
+            c = f'"{sys.executable}"' + c[len("python"):]
+        try:
+            r = subprocess.run(
+                c, shell=True, cwd=str(self.root), timeout=30,
+                capture_output=True, text=True,
+            )
+            return {
+                "ok": r.returncode == 0,
+                "data": {
+                    "command": cmd,
+                    "returncode": r.returncode,
+                    "stdout": r.stdout[-20_000:],
+                    "stderr": r.stderr[-20_000:],
+                },
+            }
+        except subprocess.TimeoutExpired:
+            return {"ok": False, "error": "timeout after 30s", "command": cmd}
+        except Exception as e:
+            return {"ok": False, "error": str(e), "command": cmd}
+
     def call(self, name: str, args: dict) -> dict:
         args = args or {}
         if name == "list_dir":
@@ -149,4 +262,10 @@ class AgentTools:
             return self.skills_list()
         if name == "skill_run":
             return self.skill_run(args["name"])
+        if name == "code_search":
+            return self.code_search(args["query"], args.get("max_hits") or 20)
+        if name == "memory_note":
+            return self.memory_note(args["text"])
+        if name == "shell":
+            return self.shell(args["cmd"], bool(args.get("confirmed", False)))
         return {"ok": False, "error": f"unknown tool {name}"}

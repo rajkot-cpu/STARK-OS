@@ -33,6 +33,30 @@ class TestAgentTools(unittest.TestCase):
             r = AgentTools(Path(td)).web_fetch("file:///etc/passwd")
             self.assertFalse(r["ok"])
 
+    def test_code_search_finds_line(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "a.py").write_text("hello_unique_xyz = 1\n", encoding="utf-8")
+            r = AgentTools(root).code_search("hello_unique_xyz")
+            self.assertTrue(r["ok"])
+            self.assertTrue(any("hello_unique_xyz" in h["text"] for h in r["data"]["hits"]))
+
+    def test_shell_needs_r3(self):
+        with tempfile.TemporaryDirectory() as td:
+            r = AgentTools(Path(td)).shell("echo pwn")
+            self.assertTrue(r.get("needs_r3"))
+            self.assertFalse(r["ok"])
+            self.assertEqual(r["command"], "echo pwn")
+
+    def test_memory_note_appends(self):
+        with tempfile.TemporaryDirectory() as td:
+            t = AgentTools(Path(td))
+            self.assertTrue(t.memory_note("first")["ok"])
+            t.call("memory_note", {"text": "second"})
+            body = (Path(td) / "memory" / "agent_notes.md").read_text(encoding="utf-8")
+            self.assertIn("first", body)
+            self.assertIn("second", body)
+
 
 if __name__ == "__main__":
     unittest.main()
