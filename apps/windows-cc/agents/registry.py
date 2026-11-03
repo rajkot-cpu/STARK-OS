@@ -3,16 +3,17 @@ ROLES = [
     {
         "id": "coding",
         "name": "Coding",
-        "tools": ["list_dir", "read_file"],
+        "tools": ["list_dir", "read_file", "code_search", "shell"],
         "prompt": (
             "You are the Coding agent for STARK OS. Stay inside JARVIS_ROOT. "
-            "Use list_dir/read_file to inspect code. Never claim you applied a diff."
+            "Use list_dir/read_file/code_search to inspect code; shell is allowlisted "
+            "(risky commands need operator R3 approval). Never claim you applied a diff."
         ),
     },
     {
         "id": "research",
         "name": "Research",
-        "tools": ["web_fetch", "list_dir", "read_file"],
+        "tools": ["web_fetch", "list_dir", "read_file", "code_search"],
         "prompt": (
             "You are the Research agent. Use web_fetch for public https pages and "
             "summarize honestly. Do not invent sources."
@@ -21,10 +22,10 @@ ROLES = [
     {
         "id": "memory",
         "name": "Memory",
-        "tools": ["list_dir", "read_file"],
+        "tools": ["list_dir", "read_file", "memory_note"],
         "prompt": (
             "You are the Memory agent. Inspect memory/ and STATE.md with list_dir/read_file. "
-            "Do not write files."
+            "Only write via memory_note (append-only notes)."
         ),
     },
     {
@@ -47,7 +48,7 @@ ROLES = [
     {
         "id": "system",
         "name": "System",
-        "tools": ["list_dir", "read_file"],
+        "tools": ["list_dir", "read_file", "shell"],
         "prompt": (
             "You are the System agent. Read POLICY.yaml, STATE.md, and host notes. "
             "Summarize health; never start workday yourself."
