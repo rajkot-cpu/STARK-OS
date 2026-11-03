@@ -42,6 +42,31 @@ class ShellConfirmTests(unittest.TestCase):
             self.assertFalse(api._hub._detail[rid].startswith("needs_r3:"))
             self.assertFalse(any(s.startswith("needs_r3:") for s in api._hub._steps[rid]))
 
+    def test_confirm_mismatch_rejected(self):
+        from bridge_api import BridgeApi
+        from agents.worker import AgentHub, ROLES
+        rid = ROLES[0]["id"]
+        with tempfile.TemporaryDirectory() as d:
+            api = BridgeApi.__new__(BridgeApi)
+            api.root = Path(d)
+            api._hub = AgentHub(root=Path(d))
+            api._hub._detail[rid] = "needs_r3:echo hi > x.txt"
+            r = api.shell_confirm("echo pwned > y.txt", rid)
+            self.assertFalse(r.get("ok"))
+            self.assertFalse((Path(d) / "y.txt").exists())
+            self.assertTrue(api._hub._detail[rid].startswith("needs_r3:"))
+
+    def test_confirm_requires_role_and_pending(self):
+        from bridge_api import BridgeApi
+        from agents.worker import AgentHub, ROLES
+        with tempfile.TemporaryDirectory() as d:
+            api = BridgeApi.__new__(BridgeApi)
+            api.root = Path(d)
+            api._hub = AgentHub(root=Path(d))
+            self.assertFalse(api.shell_confirm("echo hi > x.txt")["ok"])
+            self.assertFalse(api.shell_confirm("echo hi > x.txt", ROLES[0]["id"])["ok"])
+            self.assertFalse((Path(d) / "x.txt").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

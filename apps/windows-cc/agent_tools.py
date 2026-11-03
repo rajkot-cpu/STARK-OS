@@ -1,6 +1,7 @@
 # apps/windows-cc/agent_tools.py
 from __future__ import annotations
 
+import os
 import shlex
 import subprocess
 import sys
@@ -85,7 +86,6 @@ TOOL_SCHEMAS = [
             "type": "object",
             "properties": {
                 "cmd": {"type": "string"},
-                "confirmed": {"type": "boolean"},
             },
             "required": ["cmd"],
         },
@@ -231,16 +231,22 @@ class AgentTools:
             return {"ok": False, "needs_r3": True, "command": cmd}
         c = normalize(cmd)
         allow = is_allowlisted(cmd)
-        if allow and not c.lower().startswith("dir"):
-            # Allowlisted commands run without a shell (no expansion).
-            args = shlex.split(c)
-            if args and args[0].lower() == "python":
-                args[0] = sys.executable
-            run_target, use_shell = args, False
-        else:
-            # `dir` is a cmd builtin; confirmed commands run as typed (R3).
-            run_target, use_shell = c, True
+        head = c.split(" ", 1)[0].lower()
         try:
+            if allow and head == "ls" and os.name == "nt":
+                # `ls` does not exist on Windows; map to the `dir` builtin.
+                rest = c[2:].strip()
+                c = ("dir " + rest).strip()
+                head = "dir"
+            if allow and head != "dir":
+                # Allowlisted commands run without a shell (no expansion).
+                args = shlex.split(c)
+                if args and args[0].lower() == "python":
+                    args[0] = sys.executable
+                run_target, use_shell = args, False
+            else:
+                # `dir` is a cmd builtin; confirmed commands run as typed (R3).
+                run_target, use_shell = c, True
             r = subprocess.run(
                 run_target, shell=use_shell, cwd=str(self.root), timeout=30,
                 capture_output=True, text=True,
@@ -276,5 +282,6 @@ class AgentTools:
         if name == "memory_note":
             return self.memory_note(args["text"])
         if name == "shell":
-            return self.shell(args["cmd"], bool(args.get("confirmed", False)))
+            # Never honour model-supplied `confirmed`; only BridgeApi.shell_confirm may.
+            return self.shell(args["cmd"], confirmed=False)
         return {"ok": False, "error": f"unknown tool {name}"}

@@ -58,5 +58,22 @@ class TestAgentTools(unittest.TestCase):
             self.assertIn("second", body)
 
 
+
+class ShellHardeningTests(unittest.TestCase):
+    def test_model_cannot_self_confirm(self):
+        from agent_tools import AgentTools, TOOL_SCHEMAS
+        sh = [t for t in TOOL_SCHEMAS if t["name"] == "shell"][0]
+        self.assertNotIn("confirmed", sh["parameters"]["properties"])
+        with tempfile.TemporaryDirectory() as d:
+            r = AgentTools(Path(d)).call("shell", {"cmd": "echo x > z.txt", "confirmed": True})
+            self.assertTrue(r.get("needs_r3"), r)
+            self.assertFalse((Path(d) / "z.txt").exists())
+
+    def test_quotes_rejected_by_gate(self):
+        from shell_gate import is_allowlisted
+        self.assertFalse(is_allowlisted('dir "a b'))
+        self.assertFalse(is_allowlisted("python -m unittest 'x"))
+
+
 if __name__ == "__main__":
     unittest.main()

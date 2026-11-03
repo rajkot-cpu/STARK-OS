@@ -116,11 +116,23 @@ class BridgeApi:
             cmd = str(command or "").strip()
             if not cmd:
                 return {"ok": False, "error": "empty command"}
-            r = AgentTools(self.root).shell(cmd, confirmed=True)
-            # needs_r3 detail is produced by AgentHub (agents/worker.py); clear it here.
-            if role_id and isinstance(r, dict) and r.get("ok"):
-                self._agents_hub().clear_r3(str(role_id))
-            return r
+            from shell_gate import normalize
+
+            rid = str(role_id or "").strip()
+            if not rid:
+                return {"ok": False, "error": "role_id required"}
+            hub = self._agents_hub()
+            detail = str(getattr(hub, "_detail", {}).get(rid) or "")
+            if not detail.startswith("needs_r3:"):
+                return {"ok": False, "error": "no pending R3 command for role"}
+            pending = detail[len("needs_r3:"):].strip()
+            if normalize(pending) != normalize(cmd):
+                return {"ok": False, "error": "command does not match pending R3 request"}
+            try:
+                return AgentTools(self.root).shell(cmd, confirmed=True)
+            finally:
+                # Clear after any authorized attempt so the UI never sticks.
+                hub.clear_r3(rid)
         except Exception as e:
             return {"ok": False, "error": str(e)}
 

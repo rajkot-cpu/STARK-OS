@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-_META = ("|", ";", "&", "`", "$", "%", ">", "<", "\n", "\r")
+_META = ("|", ";", "&", "`", "$", "%", ">", "<", "\n", "\r", '"', "'")
 
 
 def normalize(cmd: str) -> str:
