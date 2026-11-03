@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>JARVIS Room</title>
+<link rel="stylesheet" href="css/room.css" />
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/" } }
+</script>
+</head>
+<body>
+<div id="scene"></div>
+<div id="banner" class="banner hidden"></div>
+
+<template id="tpl-status">
+  <div class="plate" id="plate-status">
+    <h2>STATUS</h2>
+    <div class="row"><span>System</span><b id="st-system">—</b></div>
+    <div class="row"><span>Policy</span><b id="st-policy">—</b></div>
+    <div class="row"><span>Quiet hrs</span><b id="st-quiet">—</b></div>
+    <div class="row"><span>Muted</span><b id="st-muted">—</b></div>
+    <div class="row"><span>Today</span><b id="st-today">—</b></div>
+    <div class="actions">
+      <button id="btn-session">Session Start</button>
+      <button id="btn-dry">Dry-run</button>
+      <button id="btn-mute">Mute</button>
+      <button id="btn-workday" class="warn">Start Workday</button>
+    </div>
+    <h3>SKILLS</h3>
+    <ul id="skills" class="list small"><li class="empty">No skills loaded</li></ul>
+  </div>
+</template>
+
+<template id="tpl-voice">
+  <div class="plate" id="plate-voice">
+    <h2>VOICE</h2>
+    <button id="btn-mic" class="mic">🎙 Tap to Speak</button>
+    <div id="voice-state" class="muted">Voice idle</div>
+    <div class="label">You</div><div id="voice-heard" class="bubble">—</div>
+    <div class="label">JARVIS</div><div id="voice-reply" class="bubble gold">—</div>
+  </div>
+</template>
+
+<template id="tpl-agents">
+  <div class="plate" id="plate-agents">
+    <h2>AGENTS / LLMs</h2>
+    <ul id="llms" class="list"><li class="empty">Probing providers…</li></ul>
+    <h3>AGENTS</h3>
+    <ul id="agents" class="list"><li class="empty">No agents</li></ul>
+  </div>
+</template>
+
+<template id="tpl-feed">
+  <div class="plate" id="plate-feed">
+    <h2>LIVE FEED</h2>
+    <ul id="feed" class="list small"><li class="empty">No audit events yet</li></ul>
+  </div>
+</template>
+
+<div id="r3" class="modal hidden">
+  <div class="modal-card">
+    <h2>R3 CONFIRMATION</h2>
+    <p>Start Workday runs real (non-dry) actions under POLICY.yaml. Continue?</p>
+    <div class="actions">
+      <button id="r3-cancel">Cancel</button>
+      <button id="r3-ok" class="warn">Confirm — Start Workday</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
