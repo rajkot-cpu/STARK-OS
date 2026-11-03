@@ -58,7 +58,9 @@ async function refreshLlms() {
 }
 
 export function agentRow(a) {
-  return `<li><span><i class="dot ${a.state === "active" ? "ok" : a.state === "error" ? "bad" : ""}"></i>${esc(a.name || a.id)}</span><small>${esc(a.state)}</small></li>`;
+  const on = a.state === "active";
+  return `<li><span><i class="dot ${on ? "ok" : a.state === "error" ? "bad" : ""}"></i>${esc(a.name || a.id)}</span>` +
+    `<span><small>${esc(a.state)}</small> <button data-agent="${esc(a.id)}" data-op="${on ? "agent_stop" : "agent_start"}">${on ? "Stop" : "Start"}</button></span></li>`;
 }
 
 async function refreshAgents() {
@@ -73,6 +75,26 @@ async function refreshFeed() {
   $("feed").innerHTML = items.length
     ? items.map((e) => `<li>${esc(e.ts || e.time || "")} ${esc(e.action || e.event || e.type || e.raw || JSON.stringify(e))}</li>`).join("")
     : `<li class="empty">${esc(r.ok ? "No audit events yet" : r.error)}</li>`;
+}
+
+async function refreshSkills() {
+  const r = await call("skills");
+  const rows = (r.ok && r.data.skills) || [];
+  $("skills").innerHTML = rows.length
+    ? rows.map((k) => `<li title="${esc(k.summary)}"><b>${esc(k.name)}</b> <small>[${esc(k.risk)}]</small></li>`).join("")
+    : `<li class="empty">${esc(r.ok ? "No skills loaded" : r.error)}</li>`;
+}
+
+async function action(btn, method, args = [], okMsg) {
+  btn.disabled = true;
+  try {
+    const r = await call(method, ...args);
+    banner(r.ok ? okMsg || `${method}: ok` : `${method} failed: ${r.error}`);
+    await refresh();
+    return r;
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 export async function refresh() {
@@ -102,12 +124,26 @@ async function voiceFlow() {
 
 function wire() {
   $("btn-mic").onclick = voiceFlow;
+  $("btn-session").onclick = (e) => action(e.currentTarget, "session_start", [], "Session started");
+  $("btn-dry").onclick = (e) => action(e.currentTarget, "dry_run_workday", [], "Dry-run complete");
+  $("btn-mute").onclick = (e) => action(e.currentTarget, "mute", [!state.muted]);
+  // R3: Start Workday only after explicit modal confirmation.
+  $("btn-workday").onclick = () => $("r3").classList.remove("hidden");
+  $("r3-cancel").onclick = () => $("r3").classList.add("hidden");
+  $("r3-ok").onclick = async (e) => {
+    $("r3").classList.add("hidden");
+    await action(e.currentTarget, "start_workday", [true], "Workday started");
+  };
+  $("agents").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-agent]");
+    if (b) action(b, b.dataset.op, [b.dataset.agent]);
+  });
 }
 
 wire();
 whenReady().then((ok) => {
   if (!ok) banner("Bridge offline — open via JarvisRoom host (host_main.py)");
-  refresh(); refreshLlms();
+  refresh(); refreshLlms(); refreshSkills();
   setInterval(refresh, 3000);
   setInterval(refreshLlms, 30000); // provider probes hit the network; keep slow
 });
