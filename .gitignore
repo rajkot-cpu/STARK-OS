@@ -17,3 +17,5 @@ reports/*-day*-exit.md
 
 __pycache__/
 *.pyc
+secrets/api_keys.env
+**/secrets/api_keys.env

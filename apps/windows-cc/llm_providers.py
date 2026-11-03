@@ -5,13 +5,53 @@ import json
 import os
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 PROVIDERS = (
-    ("anthropic", "Anthropic", "JARVIS_ANTHROPIC_API_KEY"),
-    ("openai", "OpenAI", "JARVIS_OPENAI_API_KEY"),
-    ("gemini", "Gemini", "JARVIS_GEMINI_API_KEY"),
-    ("groq", "Groq", "JARVIS_GROQ_API_KEY"),
+    ("anthropic", "Anthropic", "JARVIS_ANTHROPIC_API_KEY", ("ANTHROPIC_API_KEY",)),
+    ("openai", "OpenAI", "JARVIS_OPENAI_API_KEY", ("OPENAI_API_KEY",)),
+    ("gemini", "Gemini", "JARVIS_GEMINI_API_KEY", ("GEMINI_API_KEY", "GOOGLE_API_KEY")),
+    ("groq", "Groq", "JARVIS_GROQ_API_KEY", ("GROQ_API_KEY",)),
 )
+
+_ALIASES = {env: aliases for _, _, env, aliases in PROVIDERS}
+
+
+def load_secrets(root: Path | None = None) -> int:
+    """Load KEY=VALUE pairs from secrets/api_keys.env into os.environ (no overwrite).
+
+    Returns number of keys newly set. Never logs secret values.
+    """
+    if root is None:
+        root = Path(os.environ.get("JARVIS_HOME") or os.environ.get("JARVIS_ROOT") or ".")
+    path = Path(root) / "secrets" / "api_keys.env"
+    if not path.is_file():
+        return 0
+    n = 0
+    try:
+        for raw in path.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, val = line.split("=", 1)
+            key = key.strip()
+            val = val.strip().strip('"').strip("'")
+            if not key or not val:
+                continue
+            if not os.environ.get(key, "").strip():
+                os.environ[key] = val
+                n += 1
+    except Exception:
+        return n
+    return n
+
+
+def _resolve_key(env_key: str, aliases: tuple[str, ...] = ()) -> str:
+    for k in (env_key, *aliases):
+        v = os.environ.get(k, "").strip()
+        if v:
+            return v
+    return ""
 
 
 def _http_json(url: str, headers: dict, body: dict | None, timeout: float):
@@ -27,8 +67,8 @@ def _http_json(url: str, headers: dict, body: dict | None, timeout: float):
         return None, str(e).encode()
 
 
-def probe_one(pid: str, name: str, env_key: str, timeout: float) -> dict:
-    key = os.environ.get(env_key, "").strip()
+def probe_one(pid: str, name: str, env_key: str, timeout: float, aliases: tuple[str, ...] = ()) -> dict:
+    key = _resolve_key(env_key, aliases)
     if not key:
         return {"id": pid, "name": name, "state": "missing_key", "detail": env_key}
     try:
@@ -40,7 +80,6 @@ def probe_one(pid: str, name: str, env_key: str, timeout: float) -> dict:
                 timeout,
             )
         elif pid == "anthropic":
-            # Prefer models-less auth check via messages with max_tokens=1
             code, _ = _http_json(
                 "https://api.anthropic.com/v1/messages",
                 {
@@ -82,8 +121,9 @@ def probe_one(pid: str, name: str, env_key: str, timeout: float) -> dict:
         return {"id": pid, "name": name, "state": "network_error", "detail": str(e)}
 
 
-def probe_all(timeout: float = 8.0) -> list[dict]:
-    rows = [probe_one(a, b, c, timeout) for a, b, c in PROVIDERS]
+def probe_all(timeout: float = 8.0, root: Path | None = None) -> list[dict]:
+    load_secrets(root)
+    rows = [probe_one(a, b, c, timeout, aliases=d) for a, b, c, d in PROVIDERS]
     base = os.environ.get("JARVIS_OLLAMA_BASE", "").strip()
     if base:
         code, detail = _http_json(base.rstrip("/") + "/api/tags", {}, None, timeout)

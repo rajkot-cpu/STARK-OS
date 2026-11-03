@@ -19,7 +19,8 @@ python -m PyInstaller --noconfirm --clean --onefile --windowed --name Jarvis `
   --hidden-import workday_start --hidden-import block_delete `
   --hidden-import yaml --hidden-import runpy --hidden-import argparse `
   --hidden-import webview --hidden-import psutil `
-  --hidden-import speech_recognition `
+  --hidden-import speech_recognition --hidden-import pyaudio `
+  --collect-all speech_recognition `
   --hidden-import pyttsx3 --hidden-import pyttsx3.drivers --hidden-import pyttsx3.drivers.sapi5 `
   --hidden-import win32com.client --hidden-import pythoncom `
   --icon ..\windows-panel\assets\jarvis.ico --add-data "ui;ui" `

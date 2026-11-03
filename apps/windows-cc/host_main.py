@@ -33,6 +33,13 @@ def discover_root() -> Path:
 
 def main():
     root = discover_root()
+    os.environ.setdefault("JARVIS_HOME", str(root))
+    try:
+        from llm_providers import load_secrets
+
+        load_secrets(root)
+    except Exception:
+        pass
     api = BridgeApi(root=root)
     try:
         import voice

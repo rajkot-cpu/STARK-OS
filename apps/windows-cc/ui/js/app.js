@@ -1,5 +1,5 @@
 // apps/windows-cc/ui/js/app.js
-import { call } from "./bridge.js";
+import { call, whenReady } from "./bridge.js";
 import { drawSphere } from "./sphere.js";
 
 const $ = (id) => document.getElementById(id);
@@ -206,10 +206,18 @@ async function loadSkills() {
   $("tasks-page").innerHTML = $("skills-page").innerHTML;
 }
 
+async function boot() {
+  wire();
+  tickClock();
+  setInterval(tickClock, 1000);
+  const ok = await whenReady(15000);
+  if (!ok) {
+    banner("Bridge offline — restart JARVIS");
+    return;
+  }
+  await refresh();
+  await loadSkills();
+  setInterval(refresh, 3000);
+}
 window.addEventListener("pywebviewready", () => { refresh(); loadSkills(); });
-wire();
-tickClock();
-setInterval(tickClock, 1000);
-setInterval(refresh, 3000);
-refresh();
-loadSkills();
+boot();

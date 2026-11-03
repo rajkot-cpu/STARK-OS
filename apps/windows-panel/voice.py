@@ -26,6 +26,25 @@ def _speak_sync(text: str) -> None:
         try:
             import win32com.client
             win32com.client.Dispatch("SAPI.SpVoice").Speak(text)
+            return
+        except Exception:
+            pass
+        try:
+            import subprocess
+            # PowerShell SAPI — works even when pyttsx3/win32com fail inside frozen exe
+            safe = text.replace("'", "''")
+            subprocess.run(
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-Command",
+                    "Add-Type -AssemblyName System.Speech; "
+                    "(New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak('%s')" % safe,
+                ],
+                check=False,
+                capture_output=True,
+                timeout=30,
+            )
         except Exception:
             pass
 
