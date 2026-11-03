@@ -137,3 +137,26 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 @media (max-width: 1100px) {
   .hero, .mid, .bottom { grid-template-columns: 1fr; }
 }
+
+
+/* 3D nav icons */
+#nav button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+}
+#nav canvas.nav-icon {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+}
+#nav button.icon-fallback::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--cyan);
+  transform: rotate(45deg);
+  box-shadow: 0 0 8px var(--cyan);
+  flex: 0 0 10px;
+}

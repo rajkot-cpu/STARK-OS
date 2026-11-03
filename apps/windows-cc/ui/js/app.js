@@ -1,6 +1,7 @@
 // apps/windows-cc/ui/js/app.js
 import { call, whenReady } from "./bridge.js";
 import { drawSphere } from "./sphere.js";
+import { mountNavIcons } from "./icons3d.js";
 
 const $ = (id) => document.getElementById(id);
 const banner = (msg) => { $("banner").textContent = msg || ""; };
@@ -209,6 +210,7 @@ async function loadSkills() {
 }
 
 async function boot() {
+  mountNavIcons($("nav"));
   wire();
   tickClock();
   setInterval(tickClock, 1000);
