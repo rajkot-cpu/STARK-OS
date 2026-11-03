@@ -49,22 +49,26 @@ function renderHealth(status, agents, llms, mem) {
 
 const pendingShell = {};
 
+function esc(v) {
+  return String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
 function renderAgents(agents) {
   const html = (agents || []).map((a) => {
-    const steps = (a.steps || []).slice(-5).map((s) => `<li>${s}</li>`).join("");
+    const steps = (a.steps || []).slice(-5).map((s) => `<li>${esc(s)}</li>`).join("");
     const det = String(a.detail || "");
     const idx = det.indexOf("needs_r3:");
     const pending = det.startsWith("needs_r3:") ? det.slice(idx + "needs_r3:".length) : "";
     pendingShell[a.id] = pending;
-    const reply = (a.last_reply || a.detail || "").replace(/</g, "&lt;");
+    const reply = esc(a.last_reply || a.detail || "");
     return `
     <div class="agent-card">
       <div>
-        <div>${a.name}</div>
-        <div class="state-${a.state}">${a.state}${a.detail ? " · " + a.detail : ""}</div>
+        <div>${esc(a.name)}</div>
+        <div class="state-${a.state}">${esc(a.state)}${a.detail ? " · " + esc(a.detail) : ""}</div>
         ${reply ? `<div class="muted agent-reply">${reply}</div>` : ""}
         ${steps ? `<ul class="agent-steps">${steps}</ul>` : ""}
-        ${pending ? `<div class="shell-r3"><div class="muted">Pending shell (R3):</div><code>${pending.replace(/</g, "&lt;")}</code>
+        ${pending ? `<div class="shell-r3"><div class="muted">Pending shell (R3):</div><code>${esc(pending)}</code>
           <button data-shell-confirm="${a.id}">Confirm shell</button></div>` : ""}
         <input class="agent-goal" data-goal-for="${a.id}" placeholder="Goal (optional)" />
       </div>
@@ -80,7 +84,7 @@ function renderAgents(agents) {
       const cmd = pendingShell[btn.dataset.shellConfirm] || "";
       if (!cmd) return;
       btn.disabled = true;
-      const r = await call("shell_confirm", cmd);
+      const r = await call("shell_confirm", cmd, btn.dataset.shellConfirm);
       banner(r.ok ? "Shell command ran" : (r.error || `shell failed (rc ${r.data?.returncode ?? "?"})`));
       await refresh();
     };

@@ -27,6 +27,21 @@ class ShellConfirmTests(unittest.TestCase):
         api.root = Path(tempfile.gettempdir())
         self.assertFalse(api.shell_confirm("")["ok"])
 
+    def test_confirm_clears_r3_detail(self):
+        from bridge_api import BridgeApi
+        from agents.worker import AgentHub, ROLES
+        rid = ROLES[0]["id"]
+        with tempfile.TemporaryDirectory() as d:
+            api = BridgeApi.__new__(BridgeApi)
+            api.root = Path(d)
+            api._hub = AgentHub(root=Path(d))
+            api._hub._detail[rid] = "needs_r3:echo hi > x.txt"
+            api._hub._steps[rid].append("needs_r3: echo hi > x.txt")
+            r = api.shell_confirm("echo hi > x.txt", rid)
+            self.assertTrue(r.get("ok"), r)
+            self.assertFalse(api._hub._detail[rid].startswith("needs_r3:"))
+            self.assertFalse(any(s.startswith("needs_r3:") for s in api._hub._steps[rid]))
+
 
 if __name__ == "__main__":
     unittest.main()

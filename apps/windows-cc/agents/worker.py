@@ -145,6 +145,14 @@ class AgentHub:
         self._steps = {r["id"]: [] for r in ROLES}
         self._goals = {r["id"]: "" for r in ROLES}
 
+    def clear_r3(self, role_id: str) -> bool:
+        """Clear a pending needs_r3 detail after the user confirmed the shell command."""
+        if str(self._detail.get(role_id, "")).startswith("needs_r3:"):
+            self._detail[role_id] = "shell confirmed"
+            self._steps[role_id] = [s for s in self._steps[role_id] if not s.startswith("needs_r3:")]
+            return True
+        return False
+
     def list(self) -> list[dict]:
         out = []
         for r in ROLES:

@@ -108,7 +108,7 @@ class BridgeApi:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    def shell_confirm(self, command: str) -> dict:
+    def shell_confirm(self, command: str, role_id: str = "") -> dict:
         """Run an R3-confirmed (non-allowlisted) shell command."""
         try:
             from agent_tools import AgentTools
@@ -116,7 +116,11 @@ class BridgeApi:
             cmd = str(command or "").strip()
             if not cmd:
                 return {"ok": False, "error": "empty command"}
-            return AgentTools(self.root).shell(cmd, confirmed=True)
+            r = AgentTools(self.root).shell(cmd, confirmed=True)
+            # needs_r3 detail is produced by AgentHub (agents/worker.py); clear it here.
+            if role_id and isinstance(r, dict) and r.get("ok"):
+                self._agents_hub().clear_r3(str(role_id))
+            return r
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
