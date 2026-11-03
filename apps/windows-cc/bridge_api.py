@@ -108,6 +108,18 @@ class BridgeApi:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    def shell_confirm(self, command: str) -> dict:
+        """Run an R3-confirmed (non-allowlisted) shell command."""
+        try:
+            from agent_tools import AgentTools
+
+            cmd = str(command or "").strip()
+            if not cmd:
+                return {"ok": False, "error": "empty command"}
+            return AgentTools(self.root).shell(cmd, confirmed=True)
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     def listen(self, timeout: float = 5.0) -> dict:
         try:
             from stt import listen_once
