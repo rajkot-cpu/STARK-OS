@@ -96,9 +96,9 @@ class BridgeApi:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    def agent_start(self, role_id: str) -> dict:
+    def agent_start(self, role_id: str, goal: str = "") -> dict:
         try:
-            return self._agents_hub().start(str(role_id))
+            return self._agents_hub().start(str(role_id), goal=str(goal or ""))
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
