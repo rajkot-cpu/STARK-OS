@@ -1,0 +1,4 @@
+Vendored from apps/windows-3d/ui/vendor for offline use.
+three.js r160 (three@0.160.0) — mrdoob/three.js, MIT.
+Files: three.module.min.js, OrbitControls.js, CSS2DRenderer.js.
+Addon imports point at ./three.module.min.js (no CDN at runtime).

@@ -22,6 +22,9 @@ Last updated: 2026-10-28 ~02:30 (Asia/Calcutta)
 - workday-start skill, enriched brief (calendar+Gmail read-only cache), day_to_day_checklist, eval_06b live.
 - ROUTINE PROMPT NEEDS PARENT REFRESH: apply scripts/routine-prompts/daily-brief-0730.md via UpdateRoutine.
 
+## Status addendum (windows-room)
+- 2026-11-04: `apps/windows-room` added. pywebview host imports `apps/windows-cc` `BridgeApi` (not a second bridge). Three.js workshop UI, `build_exe.ps1` writes `JarvisRoom.exe` only. `Jarvis.exe` and `Jarvis3D.exe` build scripts unchanged. The dated workshop plan/spec files were not on `main` or `origin/jarvis/feat/command-center`.
+
 ## Next steps
 1. Let morning brief run (or run `skills/daily-brief-draft/scripts/brief.sh --write-report` for a manual dry run).
 2. Optionally fill intake (OS, daily apps, top three tasks) and real restricted-folder paths in POLICY.

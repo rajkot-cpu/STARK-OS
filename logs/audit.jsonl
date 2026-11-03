@@ -23,3 +23,4 @@
 {"time": "2026-10-28T02:40:21+05:30", "task": "daily-brief-routine", "action": "update_routine_prompt", "result": "jarvis-daily-brief-07-30 now refreshes agenda then workday_start", "undo": "UpdateRoutine revert to prior prompt"}
 {"time": "2026-10-28T03:33:04+05:30", "task": "install-user", "action": "copy_extract_policy_windows", "result": "C:/Users/rajk1/jarvis INSTALL_USER OK; archive in Downloads", "undo": "delete C:\\\\Users\\\\rajk1\\\\jarvis and Downloads archive"}
 {"time": "2026-10-28T03:38:48+05:30", "task": "win-native", "action": "deploy_start_jarvis_ps1", "result": "workday_start EXIT=0 on chandan", "undo": "remove scripts/win on Windows tree"}
+{"time": "2026-11-04T02:06:52+05:30", "task": "windows-room", "action": "scaffold_workshop", "result": "apps/windows-room imports windows-cc BridgeApi; 16 unit tests OK; UI checked in browser", "undo": "git revert the windows-room commit"}
