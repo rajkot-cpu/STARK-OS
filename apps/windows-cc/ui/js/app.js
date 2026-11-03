@@ -141,14 +141,16 @@ async function refresh() {
 async function listenFlow() {
   $("voice-state").textContent = "Listening…";
   banner("");
-  const r = await call("listen", 5);
+  const r = await call("voice_turn", 6);
   if (!r.ok) {
     banner(r.error || "Could not hear you");
     $("voice-state").textContent = "Voice idle";
     return;
   }
   $("voice-state").textContent = `Heard: ${r.text}`;
-  await call("speak", `You said ${r.text}`);
+  banner(r.reply || "");
+  if (r.reply) await call("speak", r.reply);
+  $("voice-state").textContent = "Voice idle";
 }
 
 function wire() {

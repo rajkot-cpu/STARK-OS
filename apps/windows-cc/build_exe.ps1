@@ -13,7 +13,7 @@ python -m PyInstaller --noconfirm --clean --onefile --windowed --name Jarvis `
   --paths "$JarvisRoot\apps\windows-cc" `
   --hidden-import panel_api --hidden-import bridge_api --hidden-import voice `
   --hidden-import metrics --hidden-import feed --hidden-import memory_index `
-  --hidden-import llm_providers --hidden-import stt `
+  --hidden-import llm_providers --hidden-import stt --hidden-import chat `
   --hidden-import agents --hidden-import agents.registry --hidden-import agents.worker `
   --hidden-import lib_jarvis --hidden-import session_start --hidden-import brief `
   --hidden-import workday_start --hidden-import block_delete `

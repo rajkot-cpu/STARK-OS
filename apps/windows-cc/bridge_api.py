@@ -163,6 +163,42 @@ class BridgeApi:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+
+    def chat(self, text: str = "") -> dict:
+        try:
+            from chat import reply
+
+            return reply(str(text or ""), root=self.root)
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def voice_turn(self, timeout: float = 5.0) -> dict:
+        """Listen once, local ack, Gemini reply; returns heard + reply (speak from JS)."""
+        try:
+            from stt import listen_once
+            import voice
+
+            heard = listen_once(timeout=float(timeout))
+            if not heard.get("ok"):
+                return heard
+            text = heard.get("text") or ""
+            try:
+                voice.speak("Yes sir.", wait=False)
+            except Exception:
+                pass
+            from chat import reply
+
+            ans = reply(text, root=self.root)
+            if not ans.get("ok"):
+                return {"ok": False, "error": ans.get("error") or "chat failed", "text": text}
+            return {
+                "ok": True,
+                "text": text,
+                "reply": ans["data"]["reply"],
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     def brief(self) -> dict:
         try:
             return {"ok": True, "data": {"text": self.panel.today_brief() or ""}}
