@@ -5,12 +5,21 @@ from pathlib import Path
 import os
 import sys
 
-HERE = Path(__file__).resolve().parent
-CC = HERE.parent / "windows-cc"
-sys.path.insert(0, str(HERE))
-sys.path.insert(0, str(CC))
-sys.path.insert(0, str(HERE.parent / "windows-panel"))
-sys.path.insert(0, str(HERE.parents[1] / "scripts" / "win"))
+
+def _app_dir() -> Path:
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS)
+    return Path(__file__).resolve().parent
+
+
+HERE = _app_dir()
+# When frozen, BridgeApi modules are collected into _MEIPASS; when not, use sibling trees.
+CC = HERE.parent / "windows-cc" if not getattr(sys, "frozen", False) else HERE
+PANEL = HERE.parent / "windows-panel" if not getattr(sys, "frozen", False) else HERE
+WIN = HERE.parents[1] / "scripts" / "win" if not getattr(sys, "frozen", False) else HERE
+for p in (HERE, CC, PANEL, WIN):
+    if p.exists() and str(p) not in sys.path:
+        sys.path.insert(0, str(p))
 
 from bridge_api import BridgeApi  # noqa: E402
 import panel_api  # noqa: E402
@@ -22,10 +31,11 @@ def discover_root() -> Path:
         p = Path(env)
         if panel_api.is_valid_root(p):
             return p.resolve()
-    found = panel_api.discover_root(exe_dir=HERE, default=Path(r"C:\Users\rajk1\jarvis"))
+    # Prefer install root next to exe when frozen
+    exe_dir = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else HERE
+    found = panel_api.discover_root(exe_dir=exe_dir, default=Path(r"C:\Users\rajk1\jarvis"))
     if found:
         return found
-    # box fallback for local smoke
     box = Path("/home/box/jarvis")
     if panel_api.is_valid_root(box):
         return box.resolve()
