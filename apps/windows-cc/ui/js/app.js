@@ -1,7 +1,9 @@
 // apps/windows-cc/ui/js/app.js
 import { call, whenReady } from "./bridge.js";
-import { drawSphere } from "./sphere.js";
 import { mountNavIcons } from "./icons3d.js";
+import { mountCore } from "./core3d.js";
+
+let core3d = null;
 
 const $ = (id) => document.getElementById(id);
 const banner = (msg) => { $("banner").textContent = msg || ""; };
@@ -41,28 +43,39 @@ function renderHealth(status, agents, llms, mem) {
   pill.textContent = ok ? "OPTIMAL" : (status?.system_status || "CHECK");
   pill.classList.toggle("bad", !ok);
   const score = (ok ? 0.5 : 0.2) + Math.min(0.4, connected * 0.08) + Math.min(0.2, active * 0.05);
-  drawSphere($("sphere"), score);
+  if (core3d) core3d.setHealth(score);
   $("core-page").innerHTML = $("health-list").innerHTML;
 }
 
 function renderAgents(agents) {
-  const html = (agents || []).map((a) => `
+  const html = (agents || []).map((a) => {
+    const steps = (a.steps || []).slice(-5).map((s) => `<li>${s}</li>`).join("");
+    const reply = (a.last_reply || a.detail || "").replace(/</g, "&lt;");
+    return `
     <div class="agent-card">
       <div>
         <div>${a.name}</div>
-        <div class="state-${a.state}">${a.state}</div>
+        <div class="state-${a.state}">${a.state}${a.detail ? " · " + a.detail : ""}</div>
+        ${reply ? `<div class="muted agent-reply">${reply}</div>` : ""}
+        ${steps ? `<ul class="agent-steps">${steps}</ul>` : ""}
+        <input class="agent-goal" data-goal-for="${a.id}" placeholder="Goal (optional)" />
       </div>
       <button data-agent="${a.id}" data-act="${a.state === "active" ? "stop" : "start"}">
         ${a.state === "active" ? "Stop" : "Start"}
       </button>
-    </div>`).join("");
+    </div>`;
+  }).join("");
   $("agents-grid").innerHTML = html;
   $("agents-page").innerHTML = html;
   document.querySelectorAll("[data-agent]").forEach((btn) => {
     btn.onclick = async () => {
       const id = btn.dataset.agent;
       const act = btn.dataset.act;
-      const r = act === "start" ? await call("agent_start", id) : await call("agent_stop", id);
+      const goalEl = document.querySelector(`[data-goal-for="${id}"]`);
+      const goal = goalEl ? goalEl.value.trim() : "";
+      const r = act === "start"
+        ? await call("agent_start", id, goal)
+        : await call("agent_stop", id);
       if (!r.ok) banner(r.error || "agent error");
       await refresh();
     };
@@ -211,6 +224,7 @@ async function loadSkills() {
 
 async function boot() {
   mountNavIcons($("nav"));
+  core3d = mountCore($("sphere"));
   wire();
   tickClock();
   setInterval(tickClock, 1000);

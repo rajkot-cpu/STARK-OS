@@ -160,3 +160,7 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
   box-shadow: 0 0 8px var(--cyan);
   flex: 0 0 10px;
 }
+
+.agent-reply { margin-top: 6px; font-size: 12px; max-height: 4.5em; overflow: auto; }
+.agent-steps { margin: 6px 0 0; padding-left: 16px; font-size: 11px; color: var(--muted); }
+.agent-goal { width: 100%; margin-top: 8px; background: #061018; border: 1px solid #16384c; color: var(--text); padding: 4px 6px; font-size: 12px; }
