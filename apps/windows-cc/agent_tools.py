@@ -1,6 +1,7 @@
 # apps/windows-cc/agent_tools.py
 from __future__ import annotations
 
+import shlex
 import subprocess
 import sys
 import urllib.error
@@ -229,11 +230,19 @@ class AgentTools:
         if not is_allowlisted(cmd) and not confirmed:
             return {"ok": False, "needs_r3": True, "command": cmd}
         c = normalize(cmd)
-        if c.lower().startswith("python ") and is_allowlisted(cmd):
-            c = f'"{sys.executable}"' + c[len("python"):]
+        allow = is_allowlisted(cmd)
+        if allow and not c.lower().startswith("dir"):
+            # Allowlisted commands run without a shell (no expansion).
+            args = shlex.split(c)
+            if args and args[0].lower() == "python":
+                args[0] = sys.executable
+            run_target, use_shell = args, False
+        else:
+            # `dir` is a cmd builtin; confirmed commands run as typed (R3).
+            run_target, use_shell = c, True
         try:
             r = subprocess.run(
-                c, shell=True, cwd=str(self.root), timeout=30,
+                run_target, shell=use_shell, cwd=str(self.root), timeout=30,
                 capture_output=True, text=True,
             )
             return {

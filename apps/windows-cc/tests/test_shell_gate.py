@@ -26,5 +26,15 @@ class TestShellGate(unittest.TestCase):
         self.assertFalse(is_allowlisted("python -m unittest /tmp/evil"))
         self.assertFalse(is_allowlisted("python -m unittest > out.txt"))
 
+    def test_unittest_word_boundary(self):
+        self.assertFalse(is_allowlisted("python -m unittest_evil"))
+        self.assertFalse(is_allowlisted("python -m unittestfoo"))
+        self.assertTrue(is_allowlisted("python -m unittest"))
+
+    def test_env_expansion_blocked(self):
+        self.assertFalse(is_allowlisted("ls $HOME"))
+        self.assertFalse(is_allowlisted("dir %USERPROFILE%"))
+        self.assertFalse(is_allowlisted("ls ${HOME}"))
+
 if __name__ == "__main__":
     unittest.main()

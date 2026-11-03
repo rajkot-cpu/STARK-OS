@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-_META = ("|", ";", "&", "`", "$(", ">", "<", "\n", "\r")
+_META = ("|", ";", "&", "`", "$", "%", ">", "<", "\n", "\r")
 
 
 def normalize(cmd: str) -> str:
@@ -30,7 +30,7 @@ def is_allowlisted(cmd: str) -> bool:
         return True
     if re.fullmatch(r"git log -n ([1-9]|1[0-9]|20)( --oneline)?", low):
         return True
-    if low.startswith("python -m unittest"):
+    if low == "python -m unittest" or low.startswith("python -m unittest "):
         rest = c[len("python -m unittest"):].strip()
         if not rest:
             return True
