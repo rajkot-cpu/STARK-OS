@@ -92,20 +92,37 @@ function esc(v) {
   return String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
+const goalDrafts = {};
+let lastAgentsKey = "";
+
 function renderAgents(agents) {
+  // Keep any goal the operator is typing across the 3s refresh.
+  document.querySelectorAll("[data-goal-for]").forEach((el) => { goalDrafts[el.dataset.goalFor] = el.value; });
+  const focused = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.goalFor : null;
+  const key = JSON.stringify(agents || []);
+  if (focused && key === lastAgentsKey) return;
+  lastAgentsKey = key;
+  const PROV = { gemini: "Gemini", openai: "OpenAI", groq: "Groq" };
   const html = (agents || []).map((a) => {
-    const steps = (a.steps || []).slice(-5).map((s) => `<li>${esc(s)}</li>`).join("");
+    const steps = (a.steps || []).slice(-8).map((s) => `<li>${esc(s)}</li>`).join("");
     const det = String(a.detail || "");
     const idx = det.indexOf("needs_r3:");
     const pending = det.startsWith("needs_r3:") ? det.slice(idx + "needs_r3:".length) : "";
     pendingShell[a.id] = pending;
-    const reply = esc(a.last_reply || a.detail || "");
+    const reply = esc(a.last_reply || "");
+    const files = (a.files || []).map((f) => `<li>${esc(f)}</li>`).join("");
+    const isErr = a.state === "error";
     return `
     <div class="agent-card">
       <div>
         <div>${esc(a.name)}</div>
-        <div class="state-${a.state}">${esc(a.state)}${a.detail ? " · " + esc(a.detail) : ""}</div>
-        ${reply ? `<div class="muted agent-reply">${reply}</div>` : ""}
+        <div class="state-${a.state}">${esc(a.state)}${a.detail && !isErr ? " · " + esc(det.slice(0, 80)) : ""}</div>
+        ${a.goal ? `<div class="agent-goal-shown">Goal: ${esc(a.goal.slice(0, 140))}</div>` : ""}
+        ${a.provider ? `<div class="agent-prov">AI: ${esc(PROV[a.provider] || a.provider)}</div>` : ""}
+        ${a.notice ? `<div class="agent-notice">⚠ ${esc(a.notice)}</div>` : ""}
+        ${isErr ? `<div class="agent-err">${esc(det)}</div>` : ""}
+        ${reply && !isErr ? `<div class="muted agent-reply">${reply}</div>` : ""}
+        ${files ? `<div class="muted small">Files in ${esc(a.workspace || "workspace")}:</div><ul class="agent-files">${files}</ul>` : ""}
         ${steps ? `<ul class="agent-steps">${steps}</ul>` : ""}
         ${a.pending ? `<div class="tool-r3"><div class="gold">${esc(a.pending.label)} — needs your R3 approval</div>
           ${a.pending.args_preview ? `<code>${esc(a.pending.args_preview)}</code>` : ""}
@@ -114,7 +131,7 @@ function renderAgents(agents) {
           <button data-tool-reject="${a.id}">Reject</button></div>` : ""}
         ${pending ? `<div class="shell-r3"><div class="muted">Pending shell (R3):</div><code>${esc(pending)}</code>
           <button data-shell-confirm="${a.id}">Confirm shell</button></div>` : ""}
-        <input class="agent-goal" data-goal-for="${a.id}" placeholder="Goal (optional)" />
+        <input class="agent-goal" data-goal-for="${a.id}" placeholder="Goal — e.g. ${a.id === "builder" ? "build a hello-world page called test-site" : "what should it do?"}" />
       </div>
       <button data-agent="${a.id}" data-act="${a.state === "active" ? "stop" : "start"}">
         ${a.state === "active" ? "Stop" : "Start"}
@@ -123,13 +140,28 @@ function renderAgents(agents) {
   }).join("");
   $("agents-grid").innerHTML = html;
   $("agents-page").innerHTML = html;
+  document.querySelectorAll("[data-goal-for]").forEach((el) => {
+    const v = goalDrafts[el.dataset.goalFor];
+    if (v) el.value = v;
+    el.oninput = () => { goalDrafts[el.dataset.goalFor] = el.value; };
+    el.onkeydown = (ev) => {
+      if (ev.key === "Enter") {
+        const btn = el.closest(".agent-card").querySelector("[data-agent]");
+        if (btn && btn.dataset.act === "start") btn.click();
+      }
+    };
+  });
+  if (focused) {
+    const el = document.querySelector(`#page-${document.querySelector(".page.active")?.id?.slice(5) || "home"} [data-goal-for="${focused}"]`);
+    if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+  }
   document.querySelectorAll("[data-shell-confirm]").forEach((btn) => {
     btn.onclick = async () => {
       const cmd = pendingShell[btn.dataset.shellConfirm] || "";
       if (!cmd) return;
       btn.disabled = true;
       const r = await call("shell_confirm", cmd, btn.dataset.shellConfirm);
-      banner(r.ok ? "Shell command ran" : (r.error || `shell failed (rc ${r.data?.returncode ?? "?"})`));
+      banner(r.ok ? "Shell command ran — agent is continuing" : (r.error || `shell failed (rc ${r.data?.returncode ?? "?"})`));
       await refresh();
     };
   });
@@ -137,14 +169,14 @@ function renderAgents(agents) {
     btn.onclick = async () => {
       btn.disabled = true;
       const r = await call("tool_confirm", btn.dataset.toolConfirm, btn.dataset.token);
-      banner(r.ok ? "Approved tool ran — see the agent card" : (r.error || "tool failed"));
+      banner(r.ok ? "Approved — agent is continuing" : (r.error || "tool failed"));
       await refresh();
     };
   });
   document.querySelectorAll("[data-tool-reject]").forEach((btn) => {
     btn.onclick = async () => {
       await call("tool_reject", btn.dataset.toolReject);
-      banner("Tool request rejected");
+      banner("Rejected — agent was told and is continuing");
       await refresh();
     };
   });
@@ -152,15 +184,28 @@ function renderAgents(agents) {
     btn.onclick = async () => {
       const id = btn.dataset.agent;
       const act = btn.dataset.act;
-      const goalEl = document.querySelector(`[data-goal-for="${id}"]`);
-      const goal = goalEl ? goalEl.value.trim() : "";
+      const goal = (goalDrafts[id] || "").trim();
       const r = act === "start"
         ? await call("agent_start", id, goal)
         : await call("agent_stop", id);
       if (!r.ok) banner(r.error || "agent error");
+      else if (act === "start") goalDrafts[id] = "";
+      lastAgentsKey = "";
       await refresh();
     };
   });
+}
+
+async function runCommand(text) {
+  const t = (text || "").trim();
+  if (!t) return;
+  banner("…");
+  const r = await call("command", t);
+  if (!r.ok) { banner(r.error || "command failed"); return; }
+  const d = r.data || {};
+  banner(d.reply || "");
+  if (d.reply) call("speak", d.reply);
+  if (d.routed === "agent" && d.started) { lastAgentsKey = ""; await refresh(); }
 }
 
 function renderFeed(items, filter) {
@@ -170,9 +215,9 @@ function renderFeed(items, filter) {
     return !q || s.includes(q);
   }).slice().reverse();
   $("feed-list").innerHTML = rows.map((it) => {
-    const t = it.ts_ist || it.ts_utc || it.t || "";
-    const msg = it.detail || it.msg || it.action || it.raw || JSON.stringify(it);
-    return `<div class="feed-item"><div class="t">${t}</div><div>${msg}</div></div>`;
+    const t = it.ts_ist || it.ts_utc || it.t || it.time || "";
+    const msg = it.detail || it.msg || (it.action ? `${it.task ? it.task + " · " : ""}${it.action}${it.result ? " — " + it.result : ""}` : "") || it.raw || JSON.stringify(it);
+    return `<div class="feed-item"><div class="t">${esc(t)}</div><div>${esc(msg)}</div></div>`;
   }).join("") || `<div class="muted">No audit events yet.</div>`;
   $("conv-page").innerHTML = $("feed-list").innerHTML;
 }
@@ -338,6 +383,7 @@ async function listenFlow() {
   }
   $("voice-state").textContent = `Heard: ${r.text}`;
   banner(r.reply || "");
+  if (r.routed === "agent") { lastAgentsKey = ""; refresh(); }
   if (r.reply) await call("speak", r.reply);
   $("voice-state").textContent = r.engine === "whisper" ? "Voice idle · offline STT" : "Voice idle";
 }
@@ -354,6 +400,13 @@ function wire() {
     banner(r.ok ? (r.data?.was_speaking ? "Stopped speaking" : "") : (r.error || "stop failed"));
   };
   $("cmd-screen").onclick = screenFlow;
+  $("cmd-bar").onsubmit = async (ev) => {
+    ev.preventDefault();
+    const v = $("cmd-input").value;
+    $("cmd-input").value = "";
+    await runCommand(v);
+  };
+  $("cmd-mic").onclick = listenFlow;
   $("set-screen").onclick = screenFlow;
   $("set-wake").onchange = async () => {
     const el = $("set-wake");

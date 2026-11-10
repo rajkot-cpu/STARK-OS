@@ -50,6 +50,11 @@
     <main id="main">
       <!-- HOME -->
       <section id="page-home" class="page active">
+        <form id="cmd-bar" class="cmd-bar panel" autocomplete="off">
+          <input id="cmd-input" placeholder="Tell Jarvis what to do — e.g. &quot;build me a todo app&quot;, &quot;research GST on medicines&quot;, &quot;start builder make a clinic website&quot;" />
+          <button type="submit" id="cmd-run">Run</button>
+          <button type="button" id="cmd-mic" title="Speak a command">🎤</button>
+        </form>
         <div class="hero">
           <div class="health panel">
             <h3>Jarvis readiness</h3>
@@ -119,7 +124,7 @@
 
       <!-- OTHER ROUTES -->
       <section id="page-core" class="page"><h2>AI Core</h2><div id="core-page"></div></section>
-      <section id="page-agents" class="page"><h2>Agents</h2><div id="agents-page"></div></section>
+      <section id="page-agents" class="page"><h2>Agents</h2><p class="muted small">Type or say a command (e.g. "Jarvis, build me a hello-world page called test-site") — the right agent starts at once. Builder writes only inside <code>jarvis\workspace</code>; overwrite, delete and running code ask you first.</p><div id="agents-page"></div></section>
       <section id="page-tasks" class="page"><h2>Tasks</h2><p class="muted">Task list from Task agent / checklist files when present.</p><div id="tasks-page"></div></section>
       <section id="page-calendar" class="page"><h2>Calendar</h2><div id="calendar-page"></div></section>
       <section id="page-memory" class="page"><h2>Memory</h2><div id="memory-page"></div></section>

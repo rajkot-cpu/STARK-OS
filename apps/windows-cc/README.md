@@ -26,3 +26,18 @@ All of these live on the **Settings** page. Opt-ins are OFF by default and every
 | Screen reading | manual | *Read My Screen (R3)* or an agent's `screen_read` request → confirm → mss capture → 1280 px JPEG in memory → Gemini (OpenAI fallback) describes it. Nothing saved; audited | R3 per capture |
 
 Settings are stored in `config/cc_settings.json` (no secrets). Audit lines go to `logs/audit.jsonl`.
+
+## Commands that start agents (Builder + provider fallback)
+
+- Type in the command bar on Home (or press 🎤 / Tap to Speak / say "Hey Jarvis"):
+  - `build me a hello-world page called test-site` → **Builder** starts at once, writes files in `jarvis\workspace\test-site`
+  - `research GST rates on medicines` → Research · `browse python.org …` → Browser · `check system health` → System
+  - `list my skills` → Task · `remember that …` → Memory · `review the code in apps` → Coding
+  - `start <agent> <goal>` / `ask the builder to …` / `stop builder`
+  - `start trading` / `stop trading` are reserved for the voice-trading release (no-op here).
+  - Anything else goes to chat.
+- Agents try Gemini first; on quota (429), server errors, bad key or no network they fall back to
+  OpenAI (gpt-4o-mini), then Groq if a key exists. The card shows the AI used and any warning.
+- Builder tools: `write_file` (new files, auto + audited), `make_dir`, `ws_list_dir`, `ws_read_file`
+  are confined to `workspace\<project>`; overwrite/delete and any code run (`shell`) need R3 approval,
+  after which the agent continues automatically.
