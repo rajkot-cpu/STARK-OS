@@ -186,3 +186,41 @@ test("orbitFor accepts a larger hero base radius", () => {
   assert.equal(o.radius, 2.4);
   assert.ok(Math.abs(orbitFor(7, 8, 2.4, 0.2).radius - 3.8) < 1e-9);
 });
+
+import { stagePlan, placeLabels, countOverlaps, ringPhase } from "../../ui/js/agentviz.js";
+
+test("stagePlan: the core is ~40%+ of the stage height and the orbit clears it", () => {
+  for (const [w, h] of [[585, 406], [700, 470], [1072, 820], [1400, 900], [480, 420]]) {
+    const p = stagePlan(w, h);
+    assert.ok(p.sphereFrac >= 0.35, `${w}x${h}: sphere ${p.sphereFrac}`);
+    assert.ok(p.sphereFrac <= 0.46, `${w}x${h}: sphere ${p.sphereFrac}`);
+    const b = p.R * p.k * Math.sin(p.elev);
+    assert.ok(b >= 1.55 * p.k - 1e-6, `${w}x${h}: orbit half-height ${b} must clear the rings`);
+    assert.ok(p.R * p.k <= w / 2 - 50, `${w}x${h}: orbit too wide`);
+  }
+});
+
+test("ringPhase spaces agents evenly on one orbit", () => {
+  const ps = Array.from({ length: 8 }, (_, i) => ringPhase(i, 8));
+  for (let i = 1; i < 8; i++) assert.ok(Math.abs(ps[i] - ps[i - 1] - Math.PI / 4) < 1e-9);
+});
+
+test("placeLabels: no label-label overlaps for 8 agents on an ellipse, at any rotation", () => {
+  for (const [a, b] of [[230, 120], [180, 130], [460, 230]]) {
+    for (let rot = 0; rot < Math.PI * 2; rot += 0.13) {
+      const items = Array.from({ length: 8 }, (_, i) => {
+        const t = ringPhase(i, 8) + rot;
+        return { id: "a" + i, x: 400 + a * Math.cos(t), y: 300 + b * Math.sin(t), r: 21, w: 84, h: 20, prio: Math.sin(t) };
+      });
+      const pos = placeLabels(items, { bounds: { x: 0, y: 0, w: 800, h: 600 },
+        nodes: items.map((it) => ({ x: it.x, y: it.y, r: it.r })) });
+      const rects = items.map((it) => ({ x: pos[it.id].x, y: pos[it.id].y, w: it.w, h: it.h }));
+      assert.equal(countOverlaps(rects), 0, `a=${a} b=${b} rot=${rot.toFixed(2)} ${JSON.stringify(rects)}`);
+    }
+  }
+});
+
+test("placeLabels keeps the previous side when it is still free (no flicker)", () => {
+  const items = [{ id: "x", x: 100, y: 100, r: 10, w: 50, h: 18, prev: "right" }];
+  assert.equal(placeLabels(items, { bounds: { x: 0, y: 0, w: 400, h: 400 } }).x.side, "right");
+});

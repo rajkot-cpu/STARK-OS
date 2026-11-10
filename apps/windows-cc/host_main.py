@@ -65,13 +65,20 @@ def main():
     except Exception:
         pass
     ui = str(HERE / "ui" / "index.html")
-    webview.create_window(
+    win = webview.create_window(
         "JARVIS Command Center",
         url=ui,
         js_api=api,
         width=1440,
         height=900,
     )
+    # Diagnostics: a window closed by the user/OS logs "window closing"; a crash leaves no such line.
+    try:
+        from bridge_api import log_error
+
+        win.events.closing += lambda *a: log_error(root, "host", "window closing (closed by user or Windows)", "info")
+    except Exception:
+        pass
     try:
         api.autostart()  # wake word only if the operator enabled it earlier
     except Exception:
@@ -79,6 +86,12 @@ def main():
     try:
         webview.start(http_server=True, debug=False)
     finally:
+        try:
+            from bridge_api import log_error
+
+            log_error(root, "host", "Jarvis exiting (webview loop ended)", "info")
+        except Exception:
+            pass
         api.shutdown()
 
 

@@ -41,9 +41,24 @@ async function speak(text) {
 }
 
 const $ = (id) => document.getElementById(id);
-const banner = (msg) => { $("banner").textContent = msg || ""; };
+// Talk-bar status line. kind: "" (neutral info), "warn", "err". The bridge reports a missing/slow
+// pywebview API as the bare word "offline"; say what it means instead of a red "offline".
+let bannerTimer = 0;
+function banner(msg, kind = "") {
+  const el = $("banner");
+  if (!el) return;
+  let text = String(msg || "");
+  if (/^(status )?offline$/i.test(text)) { text = "Jarvis core is still starting — retrying…"; kind = "warn"; }
+  el.textContent = text;
+  el.className = `banner${kind ? " " + kind : ""}`;
+  el.title = text;
+  clearTimeout(bannerTimer);
+  if (text && text !== "…") bannerTimer = setTimeout(() => { if (el.textContent === text) banner(""); }, kind === "err" ? 30000 : 20000);
+}
+const bannerErr = (msg) => banner(msg, "err");
 
 function setRoute(name) {
+  if (name !== "home" && $("page-home") && $("page-home").classList.contains("focus")) setFocus(false);
   document.querySelectorAll("#nav button").forEach((b) => {
     b.classList.toggle("active", b.dataset.route === name);
   });
@@ -73,10 +88,20 @@ function renderHealth(status, agents, llms, mem) {
     ["System", status?.quiet_hours ? "Quiet hours" : (status?.policy_ok ? "Optimal" : "Check POLICY")],
   ];
   $("health-list").innerHTML = items.map(([k, v]) => `<li><span>${k}</span><strong>${v}</strong></li>`).join("");
+  // Quiet hours is a normal, scheduled state (no proactive work / notifications) -> calm amber, not red.
+  // Only an unapproved POLICY is an error.
   const pill = $("sys-pill");
-  const ok = status?.policy_ok && !status?.quiet_hours;
-  pill.textContent = ok ? "OPTIMAL" : (status?.system_status || "CHECK");
-  pill.classList.toggle("bad", !ok);
+  const quiet = !!status?.quiet_hours && !!status?.policy_ok;
+  const bad = !status?.policy_ok;
+  pill.textContent = bad ? (status?.system_status || "CHECK POLICY") : (quiet ? "Quiet hours" : "Optimal");
+  pill.title = quiet ? "Quiet hours (POLICY.yaml): Jarvis won't start scheduled work or speak up on its own. Everything you ask still works." : "";
+  pill.classList.toggle("bad", bad);
+  pill.classList.toggle("quiet", quiet);
+  const sys = $("hud-sys");
+  if (sys) {
+    sys.textContent = bad ? "CHECK POLICY" : (quiet ? "QUIET HOURS" : "ONLINE");
+    sys.className = `ht-sys${bad ? " bad" : (quiet ? " quiet" : "")}`;
+  }
 }
 
 function renderReadiness(data) {
@@ -89,6 +114,12 @@ function renderReadiness(data) {
     ring.classList.remove("ready-high", "ready-mid", "ready-low");
     ring.classList.add(pct >= 80 ? "ready-high" : (pct >= 50 ? "ready-mid" : "ready-low"));
   }
+  const checks = data?.checks || [];
+  const nOk = checks.filter((c) => c.ok).length;
+  if ($("ready-summary")) $("ready-summary").innerHTML = checks.length ? `<b>${nOk}</b> of ${checks.length} checks pass` : "";
+  const miss = $("ready-miss");
+  if (miss) miss.innerHTML = checks.filter((c) => !c.ok).map((c) =>
+    `<li><span class="tick">○</span><span>${esc(c.label)}</span><div class="fix">${esc(c.fix)}</div></li>`).join("");
   const list = $("ready-list");
   if (list) {
     list.innerHTML = (data?.checks || []).map((c) => {
@@ -246,7 +277,7 @@ function renderAgents(agents) {
   document.querySelectorAll("[data-open-folder]").forEach((btn) => {
     btn.onclick = async () => {
       const r = await call("open_folder", btn.dataset.openFolder);
-      if (!r.ok) banner(r.error || "could not open folder");
+      if (!r.ok) bannerErr(r.error || "could not open folder");
     };
   });
   document.querySelectorAll("[data-shell-confirm]").forEach((btn) => {
@@ -255,7 +286,7 @@ function renderAgents(agents) {
       if (!cmd) return;
       btn.disabled = true;
       const r = await call("shell_confirm", cmd, btn.dataset.shellConfirm);
-      banner(r.ok ? "Shell command ran — agent is continuing" : (r.error || `shell failed (rc ${r.data?.returncode ?? "?"})`));
+      banner(r.ok ? "Shell command ran — agent is continuing" : (r.error || `shell failed (rc ${r.data?.returncode ?? "?"})`), r.ok ? "" : "err");
       await refresh();
     };
   });
@@ -263,7 +294,7 @@ function renderAgents(agents) {
     btn.onclick = async () => {
       btn.disabled = true;
       const r = await call("tool_confirm", btn.dataset.toolConfirm, btn.dataset.token);
-      banner(r.ok ? "Approved — agent is continuing" : (r.error || "tool failed"));
+      banner(r.ok ? "Approved — agent is continuing" : (r.error || "tool failed"), r.ok ? "" : "err");
       await refresh();
     };
   });
@@ -282,7 +313,7 @@ function renderAgents(agents) {
       const r = act === "start"
         ? await call("agent_start", id, goal)
         : await call("agent_stop", id);
-      if (!r.ok) banner(r.error || "agent error");
+      if (!r.ok) bannerErr(r.error || "agent error");
       else if (act === "start") goalDrafts[id] = "";
       lastAgentsKey = "";
       await refresh();
@@ -295,11 +326,21 @@ async function runCommand(text) {
   if (!t) return;
   banner("…");
   const r = await call("command", t);
-  if (!r.ok) { banner(r.error || "command failed"); uiLog("warn", `command ${JSON.stringify(t)} failed: ${r.error}`, "cmd-bar"); return; }
+  if (!r.ok) { bannerErr(r.error || "command failed"); uiLog("warn", `command ${JSON.stringify(t)} failed: ${r.error}`, "cmd-bar"); return; }
   const d = r.data || {};
   banner(d.reply || "");
   if (d.reply) speak(d.reply);
   if (d.routed === "agent" && d.started) { lastAgentsKey = ""; await refresh(); }
+}
+
+// "2026-11-11T00:52:30.067952+05:30" -> "11 Nov 00:52:30" (today: just the time).
+function shortTime(v) {
+  const m = /^(\d{4})-(\d\d)-(\d\d)[T ](\d\d:\d\d:\d\d)/.exec(String(v || ""));
+  if (!m) return String(v || "");
+  const d = new Date();
+  const today = Number(m[1]) === d.getFullYear() && Number(m[2]) === d.getMonth() + 1 && Number(m[3]) === d.getDate();
+  const mon = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][Number(m[2]) - 1];
+  return today ? m[4] : `${Number(m[3])} ${mon} ${m[4]}`;
 }
 
 function renderFeed(items, filter) {
@@ -309,9 +350,9 @@ function renderFeed(items, filter) {
     return !q || s.includes(q);
   }).slice().reverse();
   $("feed-list").innerHTML = rows.map((it) => {
-    const t = it.ts_ist || it.ts_utc || it.t || it.time || "";
+    const t = shortTime(it.ts_ist || it.ts_utc || it.t || it.time || "");
     const msg = it.detail || it.msg || (it.action ? `${it.task ? it.task + " · " : ""}${it.action}${it.result ? " — " + it.result : ""}` : "") || it.raw || JSON.stringify(it);
-    return `<div class="feed-item"><div class="t">${esc(t)}</div><div>${esc(msg)}</div></div>`;
+    return `<div class="feed-item"><div class="t">${esc(t)}</div><div class="msg">${esc(msg)}</div></div>`;
   }).join("") || `<div class="muted">No audit events yet.</div>`;
   $("conv-page").innerHTML = $("feed-list").innerHTML;
 }
@@ -433,7 +474,7 @@ async function screenFlow() {
   banner("Reading screen…");
   const r = await call("screen_read", "What is on my screen?", true);
   const out = r.ok ? r.data.description : (r.error || "screen read failed");
-  banner(r.ok ? "Screen read done" : out);
+  banner(r.ok ? "Screen read done" : out, r.ok ? "" : "err");
   if ($("set-screen-out")) $("set-screen-out").textContent = out;
   if (r.ok) {
     $("voice-state").textContent = "Screen described";
@@ -460,9 +501,10 @@ async function refresh() {
     if (!voice.ttsFlag && Date.now() - voice.speakStarted > 2500) voice.speakingUntil = 0;
     pushVoice();
   }
-  if (st.ok && $("hud-sys")) $("hud-sys").textContent = String(st.data.system_status || "ONLINE").toUpperCase();
-  if (st.ok) renderHealth(st.data, agents.ok ? agents.data.agents : [], llms.ok ? llms.data.providers : [], mem.ok ? mem.data : null);
-  else banner(st.error || "status offline");
+  if (st.ok) {
+    renderHealth(st.data, agents.ok ? agents.data.agents : [], llms.ok ? llms.data.providers : [], mem.ok ? mem.data : null);
+    if (/still starting|not responding/.test($("banner").textContent)) banner("");
+  } else banner(st.error === "offline" ? "offline" : `Jarvis core not responding (${st.error || "status"}) — retrying`, "warn");
   if (ready && ready.ok) renderReadiness(ready.data);
   else if (core3d) core3d.setHealth(0);
   if (met.ok) renderMetrics(met.data);
@@ -485,7 +527,7 @@ async function listenFlow() {
   let r;
   try { r = await call("voice_turn", 6); } finally { voice.listening = false; pushVoice(); }
   if (!r.ok) {
-    banner(r.error || "Could not hear you");
+    bannerErr(r.error || "Could not hear you");
     $("voice-state").textContent = "Voice idle";
     return;
   }
@@ -496,7 +538,25 @@ async function listenFlow() {
   $("voice-state").textContent = r.engine === "whisper" ? "Voice idle · offline STT" : "Voice idle";
 }
 
+function setFocus(on) {
+  const page = $("page-home");
+  if (!page) return;
+  page.classList.toggle("focus", !!on);
+  const b = $("btn-focus");
+  if (b) { b.setAttribute("aria-pressed", on ? "true" : "false"); b.querySelector(".fx-txt").textContent = on ? "Exit focus" : "Focus"; }
+  if (core3d && core3d.relayout) core3d.relayout();
+}
+
 function wire() {
+  $("btn-focus").onclick = () => setFocus(!$("page-home").classList.contains("focus"));
+  $("more-cue").onclick = () => $("home-more").scrollIntoView({ behavior: "smooth", block: "start" });
+  document.addEventListener("keydown", (ev) => {
+    const t = ev.target;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+    if (!$("page-home").classList.contains("active")) return;
+    if (ev.key === "Escape" && $("page-home").classList.contains("focus")) setFocus(false);
+    else if ((ev.key === "f" || ev.key === "F") && !ev.ctrlKey && !ev.altKey && !ev.metaKey) setFocus(!$("page-home").classList.contains("focus"));
+  });
   document.querySelectorAll("#nav button").forEach((b) => {
     b.onclick = () => setRoute(b.dataset.route);
   });
@@ -505,7 +565,7 @@ function wire() {
   $("btn-talk").onclick = listenFlow;
   $("btn-stop-voice").onclick = async () => {
     const r = await call("stop_speaking");
-    banner(r.ok ? (r.data?.was_speaking ? "Stopped speaking" : "") : (r.error || "stop failed"));
+    banner(r.ok ? (r.data?.was_speaking ? "Stopped speaking" : "") : (r.error || "stop failed"), r.ok ? "" : "err");
   };
   $("cmd-screen").onclick = screenFlow;
   $("cmd-bar").onsubmit = async (ev) => {
@@ -524,44 +584,44 @@ function wire() {
         "Turn on");
       if (!ok) { el.checked = false; return; }
       const r = await call("settings_set", { wake_word: true }, true);
-      if (!r.ok) { el.checked = false; banner(r.error || "could not start wake word"); }
+      if (!r.ok) { el.checked = false; bannerErr(r.error || "could not start wake word"); }
       else renderSettings(r.data);
     } else {
       const r = await call("settings_set", { wake_word: false });
-      if (r.ok) renderSettings(r.data); else banner(r.error);
+      if (r.ok) renderSettings(r.data); else bannerErr(r.error);
     }
   };
   $("set-stt").onchange = async () => {
     const r = await call("settings_set", { stt_engine: $("set-stt").value });
-    if (r.ok) renderSettings(r.data); else banner(r.error);
+    if (r.ok) renderSettings(r.data); else bannerErr(r.error);
     $("set-stt").blur();
   };
   $("set-voice").onchange = async () => {
     const r = await call("settings_set", { voice: $("set-voice").value });
-    if (r.ok) renderSettings(r.data); else banner(r.error);
+    if (r.ok) renderSettings(r.data); else bannerErr(r.error);
     $("set-voice").blur();
   };
   $("set-voice-test").onclick = () => call("tts_test");
   $("set-whisper-dl").onclick = async () => {
     const r = await call("stt_download_model");
-    banner(r.ok ? "Downloading offline speech model…" : (r.error || "download failed"));
+    banner(r.ok ? "Downloading offline speech model…" : (r.error || "download failed"), r.ok ? "" : "err");
     await refresh();
   };
   $("chk-mute").onchange = async () => {
     const r = await call("mute", $("chk-mute").checked);
-    if (!r.ok) banner(r.error);
+    if (!r.ok) bannerErr(r.error);
     await refresh();
   };
   $("cmd-session").onclick = async () => {
     const r = await call("session_start");
-    banner(r.ok ? "Session started" : (r.error || "session failed"));
+    banner(r.ok ? "Session started" : (r.error || "session failed"), r.ok ? "" : "err");
     await refresh();
   };
   $("cmd-calendar").onclick = () => setRoute("calendar");
   $("cmd-voice").onclick = listenFlow;
   $("cmd-dry").onclick = async () => {
     const r = await call("dry_run_workday");
-    banner(r.ok ? "Dry-run complete" : (r.error || "dry-run failed"));
+    banner(r.ok ? "Dry-run complete" : (r.error || "dry-run failed"), r.ok ? "" : "err");
     await refresh();
   };
   $("cmd-workday").onclick = () => $("r3-modal").classList.remove("hidden");
@@ -569,7 +629,7 @@ function wire() {
   $("r3-confirm").onclick = async () => {
     $("r3-modal").classList.add("hidden");
     const r = await call("start_workday", true);
-    banner(r.ok ? "Workday started" : (r.error || "workday failed"));
+    banner(r.ok ? "Workday started" : (r.error || "workday failed"), r.ok ? "" : "err");
     await refresh();
   };
   $("workflows-page").innerHTML = `
@@ -611,7 +671,8 @@ async function boot() {
   try { mountNavIcons($("nav")); } catch (e) { uiLog("error", `nav icons: ${e && e.stack ? e.stack : e}`, "boot"); }
   // Home AI Core: agents orbit it as 3D nodes (falls back to the plain core, then to a message).
   try {
-    core3d = mountAgentOrbit($("sphere"), { host: $("core-stage"), labels: $("home-orbit-labels"),
+    core3d = mountAgentOrbit($("sphere"), { host: $("core-stage"), labels: $("home-orbit-labels"), padTop: 44, padBottom: 8,
+      obstacles: () => [...document.querySelectorAll("#core-stage .hud-chip, #core-stage .hud-title, #btn-focus")],
       onSelect: (id) => selectAgent(id, true),
       onLost: () => glFallback($("sphere"), "AI Core") });
     if (!core3d.ok) core3d = mountCore($("sphere"));
@@ -622,7 +683,8 @@ async function boot() {
     core3d = null;
   }
   try {
-    agentsOrbit = mountAgentOrbit($("agents-orbit"), { labels: $("orbit-labels"),
+    agentsOrbit = mountAgentOrbit($("agents-orbit"), { labels: $("orbit-labels"), padTop: 12, padBottom: 26,
+      obstacles: () => [...document.querySelectorAll(".orbit-stage .orbit-legend")],
       onSelect: (id) => selectAgent(id, false), onLost: () => glFallback($("agents-orbit"), "agent orbit") });
     if (!agentsOrbit.ok) { glFallback($("agents-orbit"), "agent orbit"); agentsOrbit = null; }
   } catch (e) {
@@ -634,14 +696,26 @@ async function boot() {
   setInterval(pushVoice, 250);
   tickClock();
   setInterval(tickClock, 1000);
-  const ok = await whenReady(15000);
-  if (!ok) {
-    banner("Bridge offline — restart JARVIS");
-    return;
+  startPolling();
+}
+
+// The pywebview bridge can take 40-60 s to come up on a cold start. Wait for it (no dead end), show a
+// neutral "starting" note meanwhile, and start the 3 s refresh exactly once whichever path wins.
+let polling = false;
+async function startPolling() {
+  if (polling) return;
+  let ok = await whenReady(15000);
+  while (!ok) {
+    banner("Jarvis core is still starting — retrying…", "warn");
+    ok = await whenReady(15000);
   }
+  if (polling) return;
+  polling = true;
+  if (/still starting/.test($("banner").textContent)) banner("");
+  window.__jarvisPolling = true;
   await refresh();
   await loadSkills();
   setInterval(refresh, 3000);
 }
-window.addEventListener("pywebviewready", () => { refresh(); loadSkills(); });
+window.addEventListener("pywebviewready", () => { startPolling(); });
 boot();

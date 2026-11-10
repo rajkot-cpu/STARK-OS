@@ -170,3 +170,119 @@ export function voicePulse(state, t) {
   if (state === "listening") return { amp: 0.35 + 0.15 * (0.5 + 0.5 * Math.sin(t / 240)), flow: 2.4 };
   return { amp: 0, flow: 1 };
 }
+
+// ---------------- Hero v2: single clean outer orbit + collision-aware labels ----------------
+
+/** Even spacing of `n` agents on ONE shared outer orbit (phase in radians). */
+export function ringPhase(i, n) {
+  const k = Math.max(1, n);
+  return (i / k) * Math.PI * 2 + Math.PI / 2;
+}
+
+/**
+ * Stage plan for the hero reactor, in CSS px. World units: the core shell has radius 1.
+ *  k      px per world unit at the core (sphere diameter = 2k)
+ *  R      world radius of the shared agent orbit
+ *  elev   camera elevation (rad): projected orbit half-height = R*k*sin(elev)
+ *  dy     how far the core sits below the stage centre (to clear the title strip)
+ * Constraints: sphere ~40-45% of the stage height; the orbit ellipse clears the reactor rings
+ * vertically (b >= clearR*k) and stays inside the stage with room for labels at the left/right ends.
+ */
+export function stagePlan(w, h, o = {}) {
+  const padTop = o.padTop ?? 44, padBottom = o.padBottom ?? 10;
+  const nodeR = o.nodeR ?? 0.25;            // world radius of an agent node
+  const clearR = o.clearR ?? 1.55;          // reactor rings + node + gap, in world units
+  const sideM = o.sideMargin ?? 58;         // px kept free left/right of the orbit (labels)
+  const frac = o.sphereFrac ?? 0.43;        // wanted sphere diameter / stage height
+  const W = Math.max(120, w || 0), H = Math.max(120, h || 0);
+  const halfAvail = (H - padTop - padBottom) / 2;
+  // vertical: front node bottom (perspective ~1.18x) must stay inside the stage
+  const kV = (halfAvail - 6) / (clearR + nodeR * 1.25) / 1.12;
+  const kWanted = (frac * H) / 2;
+  // agent nodes: ~11% of the stage height on screen, kept between 44 and 72 px
+  const nodePxWanted = Math.max(44, Math.min(72, 0.11 * H));
+  // horizontal: the orbit must be at least clearR*1.3 wide in world units; leave room for node + label
+  const side = (k) => Math.max(sideM, nodePxWanted * 0.65 + 36);
+  let k = Math.max(20, Math.min(kWanted, kV));
+  k = Math.max(20, Math.min(k, (W / 2 - side(k)) / (clearR * 1.2)));
+  const R = Math.max(clearR * 1.2, Math.min(3.1, (W / 2 - side(k)) / k));
+  const sinE = Math.min(0.86, Math.max(0.3, (clearR + 0.05) / R));
+  const nodeScale = Math.min(1.15, nodePxWanted / (2 * nodeR * k * 1.15));
+  return { k, R, elev: Math.asin(sinE), nodeR, nodeScale, dy: (padTop - padBottom) / 2, sphereFrac: (2 * k) / H };
+}
+
+export function rectOverlap(a, b, pad = 0) {
+  const x = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) + pad;
+  const y = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y) + pad;
+  return x > 0 && y > 0 ? x * y : 0;
+}
+
+/** Number of overlapping pairs among rects {x,y,w,h} (tolerance `tol` px). */
+export function countOverlaps(rects, tol = 1) {
+  let n = 0;
+  for (let i = 0; i < rects.length; i++)
+    for (let j = i + 1; j < rects.length; j++)
+      if (rectOverlap(rects[i], rects[j], -tol) > 0) n++;
+  return n;
+}
+
+const SIDES = ["below", "above", "right", "left", "belowRight", "belowLeft", "aboveRight", "aboveLeft"];
+function candidate(it, side) {
+  const g = 6, r = it.r || 0;
+  switch (side) {
+    case "above": return { x: it.x - it.w / 2, y: it.y - r - g - it.h };
+    case "right": return { x: it.x + r + g, y: it.y - it.h / 2 };
+    case "left": return { x: it.x - r - g - it.w, y: it.y - it.h / 2 };
+    case "belowRight": return { x: it.x + r * 0.6, y: it.y + r * 0.6 + g };
+    case "belowLeft": return { x: it.x - r * 0.6 - it.w, y: it.y + r * 0.6 + g };
+    case "aboveRight": return { x: it.x + r * 0.6, y: it.y - r * 0.6 - g - it.h };
+    case "aboveLeft": return { x: it.x - r * 0.6 - it.w, y: it.y - r * 0.6 - g - it.h };
+    case "below":
+    default: return { x: it.x - it.w / 2, y: it.y + r + g };
+  }
+}
+
+/**
+ * Collision-aware label placement. items: [{id, x, y, r, w, h, prio, prev}] (node centre + radius,
+ * label size, higher prio placed first, prev = side used last frame for hysteresis).
+ * opts: {bounds:{x,y,w,h}, obstacles:[rects], nodes:[{x,y,r}]}. Returns {id: {x, y, side}}.
+ * Labels never overlap each other when any free candidate exists; obstacles and node discs are avoided.
+ */
+export function placeLabels(items, opts = {}) {
+  const b = opts.bounds || { x: -1e9, y: -1e9, w: 2e9, h: 2e9 };
+  const obstacles = opts.obstacles || [];
+  const discs = (opts.nodes || []).map((n) => ({ x: n.x - n.r, y: n.y - n.r, w: 2 * n.r, h: 2 * n.r }));
+  const order = items.slice().sort((p, q) => (q.prio || 0) - (p.prio || 0));
+  const placed = [];
+  const out = {};
+  for (const it of order) {
+    const sides = it.prev ? [it.prev, ...SIDES.filter((s) => s !== it.prev)] : SIDES;
+    let best = null;
+    sides.forEach((side, si) => {
+      const c = candidate(it, side);
+      const rect = { x: c.x, y: c.y, w: it.w, h: it.h };
+      let cost = si * 0.01;   // mild preference order; prev side first
+      for (const p of placed) cost += rectOverlap(rect, p, 2) * 50;
+      for (const o of obstacles) cost += rectOverlap(rect, o) * 2;
+      for (const d of discs) cost += rectOverlap(rect, d) * 1.5;
+      const ox = Math.max(0, b.x - rect.x) + Math.max(0, rect.x + rect.w - (b.x + b.w));
+      const oy = Math.max(0, b.y - rect.y) + Math.max(0, rect.y + rect.h - (b.y + b.h));
+      cost += (ox * it.h + oy * it.w) * 8;
+      if (!best || cost < best.cost) best = { cost, rect, side };
+    });
+    // clamp into bounds as a last resort
+    const r = best.rect;
+    r.x = Math.min(Math.max(r.x, b.x), b.x + b.w - r.w);
+    r.y = Math.min(Math.max(r.y, b.y), b.y + b.h - r.h);
+    // still overlapping another label? nudge vertically away from it (rare: crowded tiny stages)
+    for (let pass = 0; pass < 4; pass++) {
+      const hit = placed.find((p) => rectOverlap(r, p, 2) > 0);
+      if (!hit) break;
+      const down = hit.y + hit.h + 3, up = hit.y - r.h - 3;
+      r.y = (Math.abs(down - r.y) <= Math.abs(up - r.y) && down + r.h <= b.y + b.h) || up < b.y ? down : up;
+    }
+    placed.push(r);
+    out[it.id] = { x: r.x, y: r.y, side: best.side };
+  }
+  return out;
+}

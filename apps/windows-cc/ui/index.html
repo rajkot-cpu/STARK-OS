@@ -61,12 +61,14 @@
             <div class="ready-wrap">
               <div id="ready-ring" class="ready-ring" style="--pct: 0" aria-label="Jarvis readiness">
                 <div class="ready-inner">
-                  <span id="g-ready">0</span>%
-                  <small>Jarvis readiness</small>
+                  <span class="ready-num"><span id="g-ready">0</span><sup>%</sup></span>
+                  <small>Readiness</small>
                 </div>
               </div>
-              <ul id="ready-list"></ul>
+              <div id="ready-summary" class="ready-summary"></div>
             </div>
+            <ul id="ready-miss" class="ready-miss-list"></ul>
+            <details class="ready-details"><summary>All checks</summary><ul id="ready-list"></ul></details>
             <ul id="ready-extras" class="ready-extras"></ul>
             <h3 class="health-sub">AI Core Overview</h3>
             <ul id="health-list"></ul>
@@ -74,20 +76,12 @@
           <div class="core panel hero-core">
             <div id="core-stage" class="core-stage">
               <canvas id="sphere" aria-label="AI Core with agents" title="Click an agent to open it"></canvas>
-              <svg id="core-hud" class="core-hud" viewBox="-500 -500 1000 1000" aria-hidden="true">
-                <defs>
-                  <path id="hud-arc-top" d="M -430 0 A 430 430 0 0 1 430 0" />
-                  <radialGradient id="hud-vig" r="0.5"><stop offset="0.7" stop-color="#38d4ff" stop-opacity="0" /><stop offset="1" stop-color="#38d4ff" stop-opacity="0.08" /></radialGradient>
-                </defs>
-                <circle r="492" fill="url(#hud-vig)" />
-                <g class="hud-spin hud-slow"><circle r="470" class="hud-thin" stroke-dasharray="2 10" /></g>
-                <g class="hud-spin hud-rev"><circle r="452" class="hud-seg" stroke-dasharray="60 24 8 24" /></g>
-                <circle r="438" class="hud-track" />
-                <circle id="hud-ready-arc" r="438" class="hud-ready" pathLength="100" stroke-dasharray="0 100" transform="rotate(-90)" />
-                <g class="hud-spin hud-fast"><path d="M 0 -415 A 415 415 0 0 1 293 -293" class="hud-gold" /><path d="M 0 415 A 415 415 0 0 1 -293 293" class="hud-gold" /></g>
-                <text class="hud-curve"><textPath href="#hud-arc-top" startOffset="50%" text-anchor="middle">J.A.R.V.I.S · AI CORE v3.0 · <tspan id="hud-sys">ONLINE</tspan></textPath></text>
-              </svg>
               <div id="home-orbit-labels" class="orbit-labels"></div>
+              <div class="hud-title" id="hud-title">
+                <span class="ht-main">J.A.R.V.I.S</span>
+                <span class="ht-sub"><i class="ht-line"></i>AI CORE<span class="ht-sep">·</span><b id="hud-sys" class="ht-sys">ONLINE</b><i class="ht-line"></i></span>
+              </div>
+              <button id="btn-focus" class="hud-focus" type="button" title="Focus mode: the AI Core fills the screen (F, Esc to exit)" aria-pressed="false"><span class="fx-ico"></span><span class="fx-txt">Focus</span></button>
               <div class="hud-chip tl"><small>Readiness</small><b id="hud-ready">0%</b><i class="hud-bar"><span id="hud-ready-bar"></span></i></div>
               <div class="hud-chip tr"><small>Agents active</small><b id="hud-agents">0 / 8</b></div>
               <div class="hud-chip bl"><small>AI provider</small><b id="hud-provider">—</b></div>
@@ -99,7 +93,8 @@
             <div id="feed-list" class="feed-scroll"></div>
           </div>
         </div>
-        <div class="mid">
+        <button id="more-cue" class="more-cue" type="button">▾ Agents · Mission timeline · Quick commands · System</button>
+        <div class="mid" id="home-more">
           <div class="panel">
             <h3>Active Agents</h3>
             <div id="agents-grid" class="agents-grid"></div>
