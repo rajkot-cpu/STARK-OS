@@ -37,6 +37,21 @@ def _speakable(text: str, limit: int = 200) -> str:
     return cut[: end + 1] if end > 60 else cut.rsplit(" ", 1)[0] + "…"
 
 
+def log_error(root, source: str, message: str, level: str = "error") -> None:
+    """Append one line to logs/ui-errors.log (JS errors, bridge exceptions, crashed threads)."""
+    try:
+        from datetime import datetime
+
+        d = Path(root) / "logs"
+        d.mkdir(parents=True, exist_ok=True)
+        msg = " ".join(str(message or "").split())[:2000]
+        ts = datetime.now().astimezone().isoformat(timespec="seconds")
+        with open(d / "ui-errors.log", "a", encoding="utf-8") as f:
+            f.write(f"{ts} [{level}] {source}: {msg}\n")
+    except Exception:
+        pass
+
+
 class BridgeApi:
     def __init__(self, root: Path):
         self.root = Path(root)
@@ -149,7 +164,15 @@ class BridgeApi:
         try:
             return self._route(str(text or ""), speak=False)
         except Exception as e:
+            import traceback
+
+            log_error(self.root, "bridge.command", f"{text!r}: {traceback.format_exc()}")
             return {"ok": False, "error": str(e)}
+
+    def ui_log(self, level: str = "error", message: str = "", source: str = "ui") -> dict:
+        """Called from JS (window.onerror, failed bridge calls) so UI failures leave a trace."""
+        log_error(self.root, f"js.{str(source or 'ui')[:60]}", message, level=str(level or "error")[:10])
+        return {"ok": True}
 
     def _route(self, text: str, speak: bool = False) -> dict:
         from voice_intents import announce, match

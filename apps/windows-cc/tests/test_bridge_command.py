@@ -37,6 +37,30 @@ class CommandTests(unittest.TestCase):
             self.assertTrue(r["data"]["reply"].startswith("On it. Builder is building"))
             self.assertIn("agent_start_by_command", (Path(d) / "logs/audit.jsonl").read_text())
 
+    def test_backticked_command_starts_builder_not_chat(self):
+        # Regression (2026-11-10): `build me a snake game in html` pasted with backticks went to chat,
+        # which replied as if it had built the game; no agent ran and no files appeared.
+        with tempfile.TemporaryDirectory() as d:
+            api = _api(d)
+            with mock.patch.object(api._hub, "start", return_value={"ok": True}) as st, \
+                    mock.patch("chat.reply") as ch:
+                r = api.command("`build me a snake game in html`")
+            ch.assert_not_called()
+            self.assertEqual((r["data"]["routed"], r["data"]["role"]), ("agent", "builder"))
+            self.assertEqual(st.call_args.kwargs["goal"], "Build me a snake game in html")
+
+    def test_ui_log_and_command_exception_written_to_ui_errors_log(self):
+        with tempfile.TemporaryDirectory() as d:
+            api = _api(d)
+            self.assertTrue(api.ui_log("error", "TypeError: x is undefined", "window.onerror")["ok"])
+            with mock.patch.object(api, "_route", side_effect=RuntimeError("boom")):
+                r = api.command("build a thing")
+            self.assertFalse(r["ok"])
+            log = (Path(d) / "logs/ui-errors.log").read_text(encoding="utf-8")
+            self.assertIn("js.window.onerror: TypeError: x is undefined", log)
+            self.assertIn("bridge.command", log)
+            self.assertIn("RuntimeError: boom", log)
+
     def test_busy_agent_reports(self):
         with tempfile.TemporaryDirectory() as d:
             api = _api(d)

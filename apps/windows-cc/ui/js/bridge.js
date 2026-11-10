@@ -37,7 +37,27 @@ export async function call(method, ...args) {
       return await window.pywebview.api[method](...args);
     }
   } catch (e) {
+    uiLog("error", `${method} threw: ${e && e.stack ? e.stack : e}`, "bridge.call");
     return { ok: false, error: String(e) };
   }
   return { ok: false, error: "offline" };
 }
+
+// Best-effort: send UI errors to logs/ui-errors.log via the Python bridge.
+export function uiLog(level, message, source = "ui") {
+  try {
+    if (method_ok("ui_log")) window.pywebview.api.ui_log(level, String(message).slice(0, 2000), source);
+  } catch (_) { /* never throw from the logger */ }
+}
+
+function method_ok(name) {
+  return apiReady() && typeof window.pywebview.api[name] === "function";
+}
+
+window.addEventListener("error", (ev) => {
+  uiLog("error", `${ev.message} @ ${ev.filename}:${ev.lineno}:${ev.colno} ${ev.error && ev.error.stack ? ev.error.stack : ""}`, "window.onerror");
+});
+window.addEventListener("unhandledrejection", (ev) => {
+  const r = ev.reason;
+  uiLog("error", `unhandled rejection: ${r && r.stack ? r.stack : r}`, "promise");
+});

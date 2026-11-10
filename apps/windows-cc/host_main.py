@@ -31,6 +31,22 @@ def discover_root() -> Path:
     raise SystemExit("JARVIS_ROOT not found (need STATE.md + POLICY.yaml)")
 
 
+def _install_crash_log(root: Path) -> None:
+    """Uncaught exceptions (main + worker threads) go to logs/ui-errors.log; the exe is --windowed."""
+    import threading
+    import traceback
+
+    from bridge_api import log_error
+
+    def _hook(tp, val, tb):
+        log_error(root, "python.uncaught", "".join(traceback.format_exception(tp, val, tb)))
+
+    sys.excepthook = _hook
+    threading.excepthook = lambda a: log_error(
+        root, f"thread.{getattr(a.thread, 'name', '?')}",
+        "".join(traceback.format_exception(a.exc_type, a.exc_value, a.exc_traceback)))
+
+
 def main():
     root = discover_root()
     os.environ.setdefault("JARVIS_HOME", str(root))
@@ -40,6 +56,7 @@ def main():
         load_secrets(root)
     except Exception:
         pass
+    _install_crash_log(root)
     api = BridgeApi(root=root)
     try:
         import voice
