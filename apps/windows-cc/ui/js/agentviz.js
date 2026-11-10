@@ -112,3 +112,27 @@ export function canvasCssSize(clientW, clientH, fixed = null) {
   const clamp = (v) => Math.max(1, Math.min(MAX_CANVAS_CSS, Math.round(v)));
   return { w: clamp(pick(clientW, "w")), h: clamp(pick(clientH, "h")) };
 }
+
+const BADGES = { idle: "IDLE", working: "WORKING", waiting: "APPROVAL", error: "ERROR" };
+/** Short state badge for an agent label (a transient flash wins). */
+export function badgeFor(state, flash = null) {
+  if (flash === "done") return "DONE";
+  if (flash === "error") return "ERROR";
+  return BADGES[state] || "IDLE";
+}
+
+/** Exponential smoothing toward `target`; frame-rate independent (rate = 1/seconds). */
+export function damp(current, target, rate, dt) {
+  if (!(dt > 0)) return current;
+  return target + (current - target) * Math.exp(-rate * dt);
+}
+
+/** AI Core heartbeat: faster and brighter the more agents are working. `t` in ms. */
+export function corePulse(working, t) {
+  const w = Math.max(0, Math.min(5, Number(working) || 0));
+  const rate = 0.9 + w * 0.9;                       // beats per second-ish, <= 5.4
+  const intensity = Math.min(1, 0.45 + w * 0.13);    // 0.45 .. 1
+  const beat = 0.5 + 0.5 * Math.sin((t / 1000) * rate * Math.PI);
+  const scale = 1 + (0.04 + w * 0.025) * beat;       // 1 .. <= 1.165
+  return { rate, intensity, beat, scale };
+}

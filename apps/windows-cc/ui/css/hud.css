@@ -265,12 +265,22 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 .orbit-stage canvas { width: 100%; height: 100%; display: block; }
 .orbit-labels { position: absolute; inset: 0; pointer-events: none; }
 .orbit-label { position: absolute; left: 0; top: 0; pointer-events: auto; cursor: pointer; white-space: nowrap;
-  font-size: 11px; padding: 2px 7px; border-radius: 10px; background: rgba(4,14,22,.75);
-  border: 1px solid var(--c, #38d4ff); color: var(--c, #38d4ff); opacity: .6; }
-.orbit-label.st-working { opacity: 1; box-shadow: 0 0 10px var(--c, #38d4ff); }
-.orbit-label.st-waiting { opacity: 1; border-color: #ffc14d; color: #ffc14d; }
-.orbit-label.st-error { opacity: 1; border-color: #ff3b3b; color: #ff7a7a; }
-.orbit-label.sel { opacity: 1; background: rgba(56,212,255,.18); font-weight: 600; }
+  display: inline-flex; align-items: center; gap: 6px; font: 600 11px/1 "Segoe UI", system-ui, sans-serif;
+  letter-spacing: .04em; padding: 3px 4px 3px 9px; border-radius: 11px; background: rgba(3,12,20,.82);
+  border: 1px solid color-mix(in srgb, var(--c, #38d4ff) 55%, transparent); color: #d8f6ff; opacity: .78;
+  backdrop-filter: blur(2px); transition: opacity .25s, box-shadow .25s, border-color .25s, background .25s; }
+.orbit-label .nm { color: var(--c, #38d4ff); }
+.orbit-label .bd { font-size: 9px; letter-spacing: .1em; padding: 2px 6px; border-radius: 8px;
+  background: rgba(120,160,180,.18); color: #9fb6c4; }
+.orbit-label.st-working { opacity: 1; box-shadow: 0 0 12px color-mix(in srgb, var(--c, #38d4ff) 60%, transparent); }
+.orbit-label.st-working .bd { background: #38d4ff; color: #021018; }
+.orbit-label.st-waiting { opacity: 1; border-color: #ffc14d; }
+.orbit-label.st-waiting .bd { background: #ffc14d; color: #1d1200; }
+.orbit-label.st-error { opacity: 1; border-color: #ff3b3b; }
+.orbit-label.st-error .bd { background: #ff3b3b; color: #fff; }
+.orbit-label.st-done .bd { background: #3dff9a; color: #02160b; }
+.orbit-label.hov { opacity: 1; background: rgba(10,34,48,.92); }
+.orbit-label.sel { opacity: 1; border-color: #ffc35a; box-shadow: 0 0 12px rgba(255,195,90,.45); }
 .orbit-legend { position: absolute; left: 10px; bottom: 8px; display: flex; gap: 10px; color: var(--muted); }
 .orbit-legend .lg::before { content: "●"; margin-right: 4px; }
 .orbit-legend .idle::before { color: #3d6a80; }

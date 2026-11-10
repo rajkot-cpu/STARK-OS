@@ -107,3 +107,39 @@ test("repeated fit at dpr 1.25 is a fixed point for the pinned core", () => {
   }
   assert.equal(client, 320);
 });
+
+import { badgeFor, damp, corePulse } from "../../ui/js/agentviz.js";
+
+test("badgeFor gives the state badge text", () => {
+  assert.equal(badgeFor("idle"), "IDLE");
+  assert.equal(badgeFor("working"), "WORKING");
+  assert.equal(badgeFor("waiting"), "APPROVAL");
+  assert.equal(badgeFor("error"), "ERROR");
+  assert.equal(badgeFor("idle", "done"), "DONE");
+  assert.equal(badgeFor("idle", "error"), "ERROR");
+  assert.equal(badgeFor("weird"), "IDLE");
+});
+
+test("damp moves toward the target, frame-rate independent, never overshoots", () => {
+  assert.equal(damp(0, 1, 6, 0), 0);
+  const a = damp(0, 1, 6, 1 / 60);
+  assert.ok(a > 0 && a < 1);
+  // two half steps == one full step
+  const half = damp(damp(0, 1, 6, 1 / 120), 1, 6, 1 / 120);
+  assert.ok(Math.abs(half - a) < 1e-9);
+  assert.ok(Math.abs(damp(0, 1, 6, 10) - 1) < 1e-9);
+  assert.equal(damp(5, 5, 6, 0.1), 5);
+});
+
+test("corePulse grows with working agents and stays bounded", () => {
+  const idle = corePulse(0, 0);
+  const busy = corePulse(3, 0);
+  assert.ok(busy.intensity > idle.intensity);
+  assert.ok(busy.rate > idle.rate);
+  const many = corePulse(50, 1234);
+  assert.ok(many.intensity <= 1 && many.rate <= 6 && many.scale <= 1.25 && many.scale >= 0.9);
+  for (let t = 0; t < 5000; t += 37) {
+    const p = corePulse(2, t);
+    assert.ok(p.scale >= 0.9 && p.scale <= 1.25);
+  }
+});
