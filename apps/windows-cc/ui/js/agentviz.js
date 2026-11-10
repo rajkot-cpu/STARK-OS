@@ -77,11 +77,11 @@ export class Tracker {
 }
 
 /** Each agent gets its own orbit: radius, tilt, node phase and direction. */
-export function orbitFor(i, n) {
+export function orbitFor(i, n, base = 1.45, step = 0.22, tiltScale = 1) {
   const k = Math.max(1, n);
   return {
-    radius: 1.45 + i * 0.22,
-    tilt: ((i % 4) - 1.5) * 0.32 + (i % 2 ? 0.15 : -0.15),
+    radius: base + i * step,
+    tilt: (((i % 4) - 1.5) * 0.32 + (i % 2 ? 0.15 : -0.15)) * tiltScale,
     yaw: (i / k) * Math.PI,
     phase: (i / k) * Math.PI * 2,
     dir: i % 2 ? -1 : 1,
@@ -135,4 +135,38 @@ export function corePulse(working, t) {
   const beat = 0.5 + 0.5 * Math.sin((t / 1000) * rate * Math.PI);
   const scale = 1 + (0.04 + w * 0.025) * beat;       // 1 .. <= 1.165
   return { rate, intensity, beat, scale };
+}
+
+/** Hard cap on a 3D canvas backing store (device px, either side). */
+export const MAX_BACKING = 2048;
+
+/**
+ * Backing-store plan for a canvas laid out at cssW x cssH (taken from its PARENT's layout box,
+ * never from the canvas itself). Pixel ratio is the screen DPR (<= 2), lowered so neither side
+ * exceeds MAX_BACKING device px.
+ */
+export function backingFor(cssW, cssH, dpr) {
+  const { w, h } = canvasCssSize(cssW, cssH);
+  const want = Math.min(2, Math.max(1, Number(dpr) || 1));
+  const pr = Math.min(want, MAX_BACKING / Math.max(w, h));
+  return { w, h, pr, bw: Math.floor(w * pr), bh: Math.floor(h * pr) };
+}
+
+/** Camera distance so a scene of half-height `rv` and half-width `rh` fits a `vfovDeg` camera. */
+export function cameraDistance(aspect, vfovDeg, rv, rh) {
+  const t = Math.tan((vfovDeg * Math.PI) / 360);
+  return Math.max(rv / t, rh / (t * Math.max(0.2, Number(aspect) || 1)));
+}
+
+/**
+ * Core reaction to voice: `amp` 0..1 drives core/corona swell, `flow` multiplies the energy
+ * streams. idle breathes only; listening draws energy in; speaking flickers like a voice. `t` ms.
+ */
+export function voicePulse(state, t) {
+  if (state === "speaking") {
+    const a = Math.abs(Math.sin(t / 95) * Math.sin(t / 61 + 1.3)) * 0.7 + 0.3 * (0.5 + 0.5 * Math.sin(t / 37));
+    return { amp: Math.min(1, Math.max(0, a)), flow: 1.7 };
+  }
+  if (state === "listening") return { amp: 0.35 + 0.15 * (0.5 + 0.5 * Math.sin(t / 240)), flow: 2.4 };
+  return { amp: 0, flow: 1 };
 }

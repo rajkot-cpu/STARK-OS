@@ -2,6 +2,7 @@
 // Bug (Nov 2026): orbit3d fit() read clientWidth of the CSS-unsized Home #sphere canvas and wrote
 // width = clientWidth * devicePixelRatio every frame -> canvas grew 25%/frame to 33,554,432 px,
 // nothing rendered, WebView2 reached ~2 GB and closed.
+// Nov 2026 (hero core): the Home core must fill >= 55% of the hero and stay a stable size per frame.
 // Usage: node orbit_hidpi.browser.mjs <ui dir> <playwright-core dir> <chrome path>
 import { createRequire } from "node:module";
 import http from "node:http"; import fs from "node:fs"; import path from "node:path";
@@ -30,17 +31,37 @@ try {
     });
     await pg.goto(`http://127.0.0.1:${port}/index.html`);
     await pg.waitForTimeout(2500);
-    const home = await pg.evaluate(() => { const s = document.getElementById("sphere");
-      return { w: s.width, h: s.height, cw: s.clientWidth, ch: s.clientHeight }; });
+    // Hero AI Core: sample size over several frames -> must be large AND stable (no feedback loop).
+    const samples = [];
+    for (let k = 0; k < 4; k++) {
+      samples.push(await pg.evaluate(() => { const s = document.getElementById("sphere");
+        const r = s.getBoundingClientRect(); const hero = document.querySelector(".hero").getBoundingClientRect();
+        const st = (window.__orbitStats || {}).sphere || {};
+        return { w: s.width, h: s.height, cw: Math.round(r.width), ch: Math.round(r.height),
+          heroW: Math.round(hero.width), heroH: Math.round(hero.height), main: document.getElementById("main").clientHeight,
+          frames: st.frames || 0, core: st.coreDiamPx || 0, reactor: st.reactorDiamPx || 0,
+          labels: document.querySelectorAll("#home-orbit-labels .orbit-label").length }; }));
+      await pg.waitForTimeout(400);
+    }
+    const home = samples[samples.length - 1];
     await pg.click('#nav button[data-route="agents"]');
     await pg.waitForTimeout(2000);
     const ag = await pg.evaluate(() => { const s = document.getElementById("agents-orbit");
       return { w: s.width, h: s.height, cw: s.clientWidth, ch: s.clientHeight,
-        labels: document.querySelectorAll(".orbit-label").length }; });
+        labels: document.querySelectorAll("#orbit-labels .orbit-label").length }; });
     const tag = `dpr ${dpr}`;
-    if (home.cw > 400 || home.ch > 400) fail.push(`${tag}: Home core canvas grew to ${home.cw}x${home.ch} css`);
-    if (home.w > Math.ceil(400 * dpr)) fail.push(`${tag}: Home core backing store ${home.w}x${home.h}`);
-    if (Math.abs(ag.w - Math.round(ag.cw * dpr)) > 2) fail.push(`${tag}: Agents canvas ${ag.w} != css ${ag.cw} * dpr`);
+    const areaRatio = (home.cw * home.ch) / (home.heroW * home.heroH);
+    if (areaRatio < 0.55) fail.push(`${tag}: Home core canvas is ${(areaRatio * 100).toFixed(0)}% of the hero area, want >= 55%`);
+    if (home.ch < 0.55 * home.main) fail.push(`${tag}: Home core ${home.ch}px tall is < 55% of Home content height ${home.main}`);
+    if (samples.some((x) => x.w !== home.w || x.h !== home.h || x.cw !== home.cw || x.ch !== home.ch))
+      fail.push(`${tag}: Home core size changed between frames ${JSON.stringify(samples.map((x) => [x.w, x.h, x.cw, x.ch]))}`);
+    if (Math.abs(home.w - Math.floor(home.cw * dpr)) > 2) fail.push(`${tag}: Home backing ${home.w} != css ${home.cw} * dpr`);
+    if (home.w > 2048 || home.h > 2048) fail.push(`${tag}: Home backing store ${home.w}x${home.h} > 2048`);
+    if (!(home.frames > 1)) fail.push(`${tag}: Home core not rendering (frames ${home.frames})`);
+    if (home.core < 0.22 * home.ch) fail.push(`${tag}: core sphere only ${home.core}px on a ${home.ch}px stage`);
+    if (home.reactor < 0.55 * home.ch) fail.push(`${tag}: reactor rings only ${home.reactor}px on a ${home.ch}px stage`);
+    if (home.labels !== 8) fail.push(`${tag}: ${home.labels} Home orbit labels, want 8`);
+    if (Math.abs(ag.w - Math.floor(ag.cw * dpr)) > 2) fail.push(`${tag}: Agents canvas ${ag.w} != css ${ag.cw} * dpr`);
     if (ag.cw < 200 || ag.ch < 200) fail.push(`${tag}: Agents canvas too small ${ag.cw}x${ag.ch}`);
     if (ag.labels !== 8) fail.push(`${tag}: ${ag.labels} orbit labels, want 8`);
     if (errs.length) fail.push(`${tag}: page errors ${errs.join(" | ")}`);

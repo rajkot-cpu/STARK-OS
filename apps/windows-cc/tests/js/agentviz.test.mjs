@@ -143,3 +143,46 @@ test("corePulse grows with working agents and stays bounded", () => {
     assert.ok(p.scale >= 0.9 && p.scale <= 1.25);
   }
 });
+
+import { backingFor, MAX_BACKING, cameraDistance, voicePulse } from "../../ui/js/agentviz.js";
+
+test("backingFor follows DPR and caps the backing store at MAX_BACKING", () => {
+  assert.deepEqual(backingFor(800, 600, 1.25), { w: 800, h: 600, pr: 1.25, bw: 1000, bh: 750 });
+  assert.equal(backingFor(800, 600, 3).pr, 2);
+  const big = backingFor(1900, 1000, 1.5);
+  assert.ok(big.bw <= MAX_BACKING && big.bh <= MAX_BACKING, JSON.stringify(big));
+  const huge = backingFor(26843546, 26843546, 1.25);
+  assert.ok(huge.bw <= MAX_BACKING && huge.bh <= MAX_BACKING);
+  assert.equal(backingFor(0, 0, 1).w, 320);
+});
+
+test("backingFor is idempotent: feeding its result back never grows (no feedback loop)", () => {
+  let css = { w: 900, h: 640 };
+  for (const dpr of [1, 1.25, 1.5]) {
+    const a = backingFor(css.w, css.h, dpr);
+    const b = backingFor(a.w, a.h, dpr);
+    assert.deepEqual(a, b);
+  }
+});
+
+test("cameraDistance fits both the height and the width", () => {
+  const tall = cameraDistance(0.6, 38, 3, 4);
+  const wide = cameraDistance(2.0, 38, 3, 4);
+  assert.ok(tall > wide, "narrow canvases need the camera further away");
+  const t = Math.tan((38 * Math.PI) / 360);
+  assert.ok(Math.abs(wide - 3 / t) < 1e-9);
+});
+
+test("voicePulse: idle calm, listening pulls energy in, speaking flickers within 0..1", () => {
+  assert.deepEqual(voicePulse("idle", 1000), { amp: 0, flow: 1 });
+  assert.ok(voicePulse("listening", 1000).flow > 2);
+  const amps = Array.from({ length: 200 }, (_, i) => voicePulse("speaking", i * 16).amp);
+  assert.ok(Math.min(...amps) >= 0 && Math.max(...amps) <= 1);
+  assert.ok(Math.max(...amps) - Math.min(...amps) > 0.3, "speaking should visibly vary");
+});
+
+test("orbitFor accepts a larger hero base radius", () => {
+  const o = orbitFor(0, 8, 2.4, 0.2, 0.7);
+  assert.equal(o.radius, 2.4);
+  assert.ok(Math.abs(orbitFor(7, 8, 2.4, 0.2).radius - 3.8) < 1e-9);
+});

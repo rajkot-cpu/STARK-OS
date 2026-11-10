@@ -56,7 +56,7 @@
           <button type="button" id="cmd-mic" title="Speak a command">🎤</button>
         </form>
         <div class="hero">
-          <div class="health panel">
+          <div class="health panel hero-side">
             <h3>Jarvis readiness</h3>
             <div class="ready-wrap">
               <div id="ready-ring" class="ready-ring" style="--pct: 0" aria-label="Jarvis readiness">
@@ -71,13 +71,32 @@
             <h3 class="health-sub">AI Core Overview</h3>
             <ul id="health-list"></ul>
           </div>
-          <div class="core panel">
-            <canvas id="sphere" width="320" height="320" aria-label="AI Core with agents" title="Click an agent to open it"></canvas>
-            <div class="core-label">JARVIS AI CORE v3.0.0</div>
+          <div class="core panel hero-core">
+            <div id="core-stage" class="core-stage">
+              <canvas id="sphere" aria-label="AI Core with agents" title="Click an agent to open it"></canvas>
+              <svg id="core-hud" class="core-hud" viewBox="-500 -500 1000 1000" aria-hidden="true">
+                <defs>
+                  <path id="hud-arc-top" d="M -430 0 A 430 430 0 0 1 430 0" />
+                  <radialGradient id="hud-vig" r="0.5"><stop offset="0.7" stop-color="#38d4ff" stop-opacity="0" /><stop offset="1" stop-color="#38d4ff" stop-opacity="0.08" /></radialGradient>
+                </defs>
+                <circle r="492" fill="url(#hud-vig)" />
+                <g class="hud-spin hud-slow"><circle r="470" class="hud-thin" stroke-dasharray="2 10" /></g>
+                <g class="hud-spin hud-rev"><circle r="452" class="hud-seg" stroke-dasharray="60 24 8 24" /></g>
+                <circle r="438" class="hud-track" />
+                <circle id="hud-ready-arc" r="438" class="hud-ready" pathLength="100" stroke-dasharray="0 100" transform="rotate(-90)" />
+                <g class="hud-spin hud-fast"><path d="M 0 -415 A 415 415 0 0 1 293 -293" class="hud-gold" /><path d="M 0 415 A 415 415 0 0 1 -293 293" class="hud-gold" /></g>
+                <text class="hud-curve"><textPath href="#hud-arc-top" startOffset="50%" text-anchor="middle">J.A.R.V.I.S · AI CORE v3.0 · <tspan id="hud-sys">ONLINE</tspan></textPath></text>
+              </svg>
+              <div id="home-orbit-labels" class="orbit-labels"></div>
+              <div class="hud-chip tl"><small>Readiness</small><b id="hud-ready">0%</b><i class="hud-bar"><span id="hud-ready-bar"></span></i></div>
+              <div class="hud-chip tr"><small>Agents active</small><b id="hud-agents">0 / 8</b></div>
+              <div class="hud-chip bl"><small>AI provider</small><b id="hud-provider">—</b></div>
+              <div class="hud-chip br"><small>Voice</small><b id="hud-voice">IDLE</b></div>
+            </div>
           </div>
-          <div class="feed panel">
+          <div class="feed panel hero-side">
             <h3>Live Intelligence Feed</h3>
-            <div id="feed-list" class="scroll"></div>
+            <div id="feed-list" class="feed-scroll"></div>
           </div>
         </div>
         <div class="mid">
