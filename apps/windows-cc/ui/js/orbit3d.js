@@ -1,7 +1,9 @@
 // apps/windows-cc/ui/js/orbit3d.js — the AI Core with every agent as a 3D node on its own orbit.
 // State comes from the bridge `agents()` poll (app.js refresh, every 3 s); logic lives in agentviz.js.
 import * as THREE from "../vendor/three.module.js";
-import { classify, visualFor, Tracker, orbitFor, styleFor, FrameGate } from "./agentviz.js";
+import { classify, visualFor, Tracker, orbitFor, styleFor, FrameGate, canvasCssSize } from "./agentviz.js";
+
+const report = (level, msg) => { try { if (window.__jarvisUiLog) window.__jarvisUiLog(level, msg, "orbit3d"); } catch (_) {} };
 
 function geometryFor(shape, s) {
   switch (shape) {
@@ -27,12 +29,29 @@ const NOOP = { update() {}, setHealth() {}, select() {}, selected() { return nul
  */
 export function mountAgentOrbit(canvas, opts = {}) {
   if (!canvas) return NOOP;
+  // A canvas with no CSS size is laid out at its width/height attributes. three.js setSize() writes
+  // those as cssSize * devicePixelRatio, so on a 125% screen reading clientWidth back made the Home
+  // core grow 25% per frame (to 33,554,432 px: blank core, ~2 GB WebView, window closed).
+  // Fixed-size canvases (opts.fluid false) are pinned to their attribute size in CSS px once.
+  let fixed = null;
+  if (!opts.fluid) {
+    fixed = { w: Number(canvas.getAttribute("width")) || 320, h: Number(canvas.getAttribute("height")) || 320 };
+    canvas.style.width = fixed.w + "px";
+    canvas.style.height = fixed.h + "px";
+  }
   let renderer;
   try {
     renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: "low-power" });
   } catch (e) {
+    report("error", `WebGL init failed for #${canvas.id}: ${e && e.message ? e.message : e}`);
     return NOOP;
   }
+  canvas.addEventListener("webglcontextlost", (ev) => {
+    ev.preventDefault();
+    report("error", `WebGL context lost on #${canvas.id}`);
+    if (opts.onLost) opts.onLost();
+  });
+  canvas.addEventListener("webglcontextrestored", () => report("info", `WebGL context restored on #${canvas.id}`));
   const compact = !!opts.compact;
   const labelHost = opts.labels || null;
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -165,8 +184,7 @@ export function mountAgentOrbit(canvas, opts = {}) {
 
   let w0 = 0, h0 = 0;
   function fit() {
-    const w = canvas.clientWidth || canvas.width || 320;
-    const h = canvas.clientHeight || canvas.height || 320;
+    const { w, h } = canvasCssSize(canvas.clientWidth, canvas.clientHeight, fixed);
     if (w === w0 && h === h0) return;
     w0 = w; h0 = h;
     renderer.setSize(w, h, false);

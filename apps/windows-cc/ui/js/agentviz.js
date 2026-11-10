@@ -98,3 +98,17 @@ export class FrameGate {
     return true;
   }
 }
+
+/** Largest drawing size (CSS px) a 3D canvas may take; guards against runaway resize loops. */
+export const MAX_CANVAS_CSS = 2048;
+
+/**
+ * CSS size to render a canvas at. `fixed` = the size the canvas was pinned to at mount (Home core),
+ * otherwise the laid-out client size (Agents page, 100% wide). Never reads the backing-store size,
+ * which three.js multiplies by devicePixelRatio (reading it back grew the canvas every frame).
+ */
+export function canvasCssSize(clientW, clientH, fixed = null) {
+  const pick = (v, f) => (fixed && fixed[f] > 0 ? fixed[f] : (v > 0 ? v : 320));
+  const clamp = (v) => Math.max(1, Math.min(MAX_CANVAS_CSS, Math.round(v)));
+  return { w: clamp(pick(clientW, "w")), h: clamp(pick(clientH, "h")) };
+}

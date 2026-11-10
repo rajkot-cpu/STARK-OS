@@ -534,12 +534,40 @@ async function loadSkills() {
   $("tasks-page").innerHTML = $("skills-page").innerHTML;
 }
 
+// Visible message instead of a blank panel when WebGL is unavailable or its context is lost.
+function glFallback(canvas, what) {
+  if (!canvas || !canvas.parentNode) return;
+  if (canvas.parentNode.querySelector(".gl-fallback")) return;
+  const d = document.createElement("div");
+  d.className = "gl-fallback";
+  d.textContent = `3D ${what} unavailable — WebGL could not start on this PC (see logs\\ui-errors.log). Agents still work below.`;
+  canvas.style.display = "none";
+  canvas.parentNode.insertBefore(d, canvas.nextSibling);
+}
+
 async function boot() {
-  mountNavIcons($("nav"));
-  // Home AI Core: agents orbit it as 3D nodes (falls back to the plain core without WebGL).
-  core3d = mountAgentOrbit($("sphere"), { compact: true, onSelect: (id) => selectAgent(id, true) });
-  if (!core3d.ok) core3d = mountCore($("sphere"));
-  agentsOrbit = mountAgentOrbit($("agents-orbit"), { labels: $("orbit-labels"), onSelect: (id) => selectAgent(id, false) });
+  window.__jarvisBooted = true;
+  try { mountNavIcons($("nav")); } catch (e) { uiLog("error", `nav icons: ${e && e.stack ? e.stack : e}`, "boot"); }
+  // Home AI Core: agents orbit it as 3D nodes (falls back to the plain core, then to a message).
+  try {
+    core3d = mountAgentOrbit($("sphere"), { compact: true, onSelect: (id) => selectAgent(id, true),
+      onLost: () => glFallback($("sphere"), "AI Core") });
+    if (!core3d.ok) core3d = mountCore($("sphere"));
+    if (core3d && core3d.ok === false) glFallback($("sphere"), "AI Core");
+  } catch (e) {
+    uiLog("error", `AI Core mount: ${e && e.stack ? e.stack : e}`, "boot");
+    glFallback($("sphere"), "AI Core");
+    core3d = null;
+  }
+  try {
+    agentsOrbit = mountAgentOrbit($("agents-orbit"), { fluid: true, labels: $("orbit-labels"),
+      onSelect: (id) => selectAgent(id, false), onLost: () => glFallback($("agents-orbit"), "agent orbit") });
+    if (!agentsOrbit.ok) { glFallback($("agents-orbit"), "agent orbit"); agentsOrbit = null; }
+  } catch (e) {
+    uiLog("error", `agent orbit mount: ${e && e.stack ? e.stack : e}`, "boot");
+    glFallback($("agents-orbit"), "agent orbit");
+    agentsOrbit = null;
+  }
   wire();
   tickClock();
   setInterval(tickClock, 1000);

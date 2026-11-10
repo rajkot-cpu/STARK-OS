@@ -44,8 +44,11 @@ export async function call(method, ...args) {
 }
 
 // Best-effort: send UI errors to logs/ui-errors.log via the Python bridge.
+// early-errors.js (classic script, loaded first) owns the listeners and queues messages until the
+// bridge is ready, so errors during startup are no longer dropped.
 export function uiLog(level, message, source = "ui") {
   try {
+    if (typeof window.__jarvisUiLog === "function") { window.__jarvisUiLog(level, message, source); return; }
     if (method_ok("ui_log")) window.pywebview.api.ui_log(level, String(message).slice(0, 2000), source);
   } catch (_) { /* never throw from the logger */ }
 }
@@ -54,10 +57,12 @@ function method_ok(name) {
   return apiReady() && typeof window.pywebview.api[name] === "function";
 }
 
-window.addEventListener("error", (ev) => {
-  uiLog("error", `${ev.message} @ ${ev.filename}:${ev.lineno}:${ev.colno} ${ev.error && ev.error.stack ? ev.error.stack : ""}`, "window.onerror");
-});
-window.addEventListener("unhandledrejection", (ev) => {
-  const r = ev.reason;
-  uiLog("error", `unhandled rejection: ${r && r.stack ? r.stack : r}`, "promise");
-});
+if (typeof window.__jarvisUiLog !== "function") {
+  window.addEventListener("error", (ev) => {
+    uiLog("error", `${ev.message} @ ${ev.filename}:${ev.lineno}:${ev.colno} ${ev.error && ev.error.stack ? ev.error.stack : ""}`, "window.onerror");
+  });
+  window.addEventListener("unhandledrejection", (ev) => {
+    const r = ev.reason;
+    uiLog("error", `unhandled rejection: ${r && r.stack ? r.stack : r}`, "promise");
+  });
+}

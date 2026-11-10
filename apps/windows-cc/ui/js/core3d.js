@@ -3,7 +3,7 @@ import * as THREE from "../vendor/three.module.js";
 
 export function mountCore(canvas) {
   if (!canvas) {
-    return { setHealth() {}, dispose() {} };
+    return { ok: false, setHealth() {}, dispose() {} };
   }
 
   let renderer;
@@ -15,7 +15,7 @@ export function mountCore(canvas) {
       powerPreference: "low-power",
     });
   } catch (e) {
-    return { setHealth() {}, dispose() {} };
+    return { ok: false, setHealth() {}, dispose() {} };
   }
 
   const w = canvas.width || 320;
@@ -66,6 +66,7 @@ export function mountCore(canvas) {
   tick();
 
   return {
+    ok: true,
     setHealth(n) {
       health = Math.max(0, Math.min(1, Number(n) || 0));
     },

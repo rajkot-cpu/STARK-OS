@@ -281,4 +281,5 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 .orbit-detail { max-height: 440px; overflow: auto; }
 .orbit-detail h3 { margin-top: 0; }
 .agent-card.selected { outline: 1px solid var(--cyan); box-shadow: 0 0 12px rgba(56,212,255,.35); }
-#sphere { cursor: pointer; }
+#sphere { cursor: pointer; width: 320px; height: 320px; }
+.gl-fallback { padding: 24px; text-align: center; color: #ffc14d; font-size: 13px; max-width: 320px; }
