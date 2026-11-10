@@ -84,3 +84,26 @@ test("frame gate caps at 60fps and pauses when hidden", () => {
   assert.equal(g.ok(17, true), true);
   assert.equal(g.ok(100, false), false);
 });
+
+import { canvasCssSize, MAX_CANVAS_CSS } from "../../ui/js/agentviz.js";
+
+test("canvasCssSize uses the pinned size, never the DPR-scaled backing store", () => {
+  // Home core: pinned 320x320 even if the layout reports something else.
+  assert.deepEqual(canvasCssSize(400, 400, { w: 320, h: 320 }), { w: 320, h: 320 });
+  // Fluid canvas follows layout.
+  assert.deepEqual(canvasCssSize(812, 440), { w: 812, h: 440 });
+  // Not laid out yet -> sane default.
+  assert.deepEqual(canvasCssSize(0, 0), { w: 320, h: 320 });
+  // Runaway values are clamped (the PC hit 26,843,546 css px).
+  assert.deepEqual(canvasCssSize(26843546, 26843546), { w: MAX_CANVAS_CSS, h: MAX_CANVAS_CSS });
+});
+
+test("repeated fit at dpr 1.25 is a fixed point for the pinned core", () => {
+  let client = 320;
+  for (let i = 0; i < 100; i++) {
+    const { w } = canvasCssSize(client, client, { w: 320, h: 320 });
+    const backing = Math.round(w * 1.25); // three.js setSize(w, h, false) -> canvas.width
+    client = backing / 1.25;              // what layout reports once the style is pinned
+  }
+  assert.equal(client, 320);
+});
