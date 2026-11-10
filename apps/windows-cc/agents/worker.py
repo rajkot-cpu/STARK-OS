@@ -9,14 +9,13 @@ import urllib.request
 from pathlib import Path
 
 from agent_tools import TOOL_SCHEMAS, AgentTools
-from llm_providers import USER_AGENT, _resolve_key, load_secrets  # UA: Groq/Cloudflare 403s Python-urllib
+from llm_providers import USER_AGENT, _resolve_key, groq_extra, groq_model, load_secrets  # UA: Groq/Cloudflare 403s Python-urllib
 
 from .registry import ROLES
 
 MAX_STEPS = 12
 MODEL = "gemini-3.1-flash-lite-preview"
 OPENAI_MODEL = "gpt-4o-mini"
-GROQ_MODEL = "llama-3.3-70b-versatile"
 MAX_OUT_TOKENS = 4096
 PROVIDER_LABEL = {"gemini": "Gemini", "openai": "OpenAI", "groq": "Groq"}
 
@@ -181,7 +180,7 @@ def _openai_turn(system: str, messages: list, tools: list, key: str, *,
                  provider: str = "openai", timeout: float = 60.0) -> dict:
     """One chat.completions tool-calling turn (OpenAI or an OpenAI-compatible API)."""
     if provider == "groq":
-        url, model = "https://api.groq.com/openai/v1/chat/completions", GROQ_MODEL
+        url, model = "https://api.groq.com/openai/v1/chat/completions", groq_model()
     else:
         url, model = "https://api.openai.com/v1/chat/completions", OPENAI_MODEL
     body: dict = {
@@ -190,6 +189,8 @@ def _openai_turn(system: str, messages: list, tools: list, key: str, *,
         "max_tokens": MAX_OUT_TOKENS,
         "temperature": 0.3,
     }
+    if provider == "groq":
+        body.update(groq_extra(model))
     if tools:
         body["tools"] = tools
     req = urllib.request.Request(

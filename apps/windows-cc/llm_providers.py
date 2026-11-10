@@ -77,6 +77,19 @@ def _resolve_key(env_key: str, aliases: tuple[str, ...] = ()) -> str:
 USER_AGENT = "JARVIS-CC/1.0 (+https://github.com/rajkot-cpu/STARK-OS)"
 
 
+# llama-3.3-70b-versatile was retired by Groq (404). Override with JARVIS_GROQ_MODEL in api_keys.env.
+GROQ_DEFAULT_MODEL = "openai/gpt-oss-120b"
+
+
+def groq_model() -> str:
+    return os.environ.get("JARVIS_GROQ_MODEL", "").strip() or GROQ_DEFAULT_MODEL
+
+
+def groq_extra(model: str) -> dict:
+    """gpt-oss models reason first; keep it short so replies/tool calls fit the token budget."""
+    return {"reasoning_effort": "low"} if "gpt-oss" in (model or "") else {}
+
+
 def _http_json(url: str, headers: dict, body: dict | None, timeout: float):
     headers = {"User-Agent": USER_AGENT, **(headers or {})}
     data = None if body is None else json.dumps(body).encode("utf-8")

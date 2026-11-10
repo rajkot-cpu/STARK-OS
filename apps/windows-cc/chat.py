@@ -7,7 +7,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from llm_providers import USER_AGENT, load_secrets, _resolve_key
+from llm_providers import USER_AGENT, groq_extra, groq_model, load_secrets, _resolve_key
 
 
 SYSTEM = (
@@ -20,7 +20,6 @@ SYSTEM = (
     "or say it as a command, for example 'build me a snake game in html', so the Builder agent starts."
 )
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
-GROQ_MODEL = "llama-3.3-70b-versatile"
 
 
 def _gemini_reply(prompt: str, key: str, timeout: float = 45.0) -> str:
@@ -58,7 +57,8 @@ def _gemini_reply(prompt: str, key: str, timeout: float = 45.0) -> str:
 
 
 def _openai_reply(prompt: str, key: str, timeout: float = 45.0, *,
-                  url: str = "https://api.openai.com/v1/chat/completions", model: str = "gpt-4o-mini") -> str:
+                  url: str = "https://api.openai.com/v1/chat/completions", model: str = "gpt-4o-mini",
+                  extra: dict | None = None) -> str:
     body = {
         "model": model,
         "messages": [
@@ -68,6 +68,9 @@ def _openai_reply(prompt: str, key: str, timeout: float = 45.0, *,
         "max_tokens": 120,
         "temperature": 0.6,
     }
+    if extra:
+        body.update(extra)
+        body["max_tokens"] = 400  # reasoning tokens count against the budget
     data = json.dumps(body).encode("utf-8")
     req = urllib.request.Request(
         url,
@@ -86,7 +89,8 @@ def _openai_reply(prompt: str, key: str, timeout: float = 45.0, *,
 
 def _groq_reply(prompt: str, key: str, timeout: float = 45.0) -> str:
     """Groq speaks the OpenAI chat.completions dialect."""
-    return _openai_reply(prompt, key, timeout, url=GROQ_URL, model=GROQ_MODEL)
+    model = groq_model()
+    return _openai_reply(prompt, key, timeout, url=GROQ_URL, model=model, extra=groq_extra(model))
 
 
 def reply(user_text: str, root: Path | None = None) -> dict:

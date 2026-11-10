@@ -66,5 +66,33 @@ class UserAgentTests(unittest.TestCase):
         self.assertTrue(_ua(seen[0]).startswith("JARVIS"))
 
 
+class GroqModelTests(unittest.TestCase):
+    """Regression (2026-11-10): llama-3.3-70b-versatile was retired on Groq (404 model not found)."""
+
+    def _body(self, fn):
+        seen, fake = _capture({"choices": [{"message": {"role": "assistant", "content": "ok"}}]})
+        with mock.patch("urllib.request.urlopen", fake):
+            fn()
+        return json.loads(seen[0].data)
+
+    def test_default_groq_model_is_current_and_low_reasoning(self):
+        with mock.patch.dict("os.environ", {"JARVIS_GROQ_MODEL": ""}):
+            for fn in (lambda: w._openai_turn("s", [], [], "k", provider="groq"),
+                       lambda: chat._groq_reply("hi", "k")):
+                b = self._body(fn)
+                self.assertEqual(b["model"], "openai/gpt-oss-120b")
+                self.assertEqual(b["reasoning_effort"], "low")
+
+    def test_groq_model_env_override(self):
+        with mock.patch.dict("os.environ", {"JARVIS_GROQ_MODEL": "qwen/some-model"}):
+            b = self._body(lambda: w._openai_turn("s", [], [], "k", provider="groq"))
+            self.assertEqual(b["model"], "qwen/some-model")
+            self.assertNotIn("reasoning_effort", b)
+
+    def test_openai_body_has_no_reasoning_effort(self):
+        b = self._body(lambda: w._openai_turn("s", [], [], "k", provider="openai"))
+        self.assertNotIn("reasoning_effort", b)
+
+
 if __name__ == "__main__":
     unittest.main()
