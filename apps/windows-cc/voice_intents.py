@@ -14,7 +14,7 @@ RESERVED = ("start_trading", "stop_trading")
 ROLE_NAMES = {
     "builder": "builder", "build": "builder", "coding": "coding", "coder": "coding", "code": "coding",
     "research": "research", "researcher": "research", "memory": "memory", "browser": "browser",
-    "task": "task", "tasks": "task", "system": "system",
+    "task": "task", "tasks": "task", "system": "system", "video": "video", "studio": "video",
 }
 
 _WAKE = re.compile(r"^\s*(?:(?:hey|hi|ok|okay|yo)\s+)?jarvis\b[\s,.:!-]*", re.I)
@@ -22,8 +22,16 @@ _POLITE = re.compile(r"^(?:please|can you|could you|would you|i want you to|i ne
 
 _BUILD = re.compile(
     r"^(?:build|make|create|code|develop|generate|scaffold|set ?up|write)\b"
-    r"(?!\s+(?:sure|it|me\s+(?:laugh|happy|smile)|(?:a|an)\s+(?:reminder|appointment|meeting|call|note|payment|order|trade)\b))"
+    r"(?!\s+(?:sure|it|me\s+(?:laugh|happy|smile)|(?:a|an)\s+(?:reminder|appointment|meeting|call|note|payment|order|trade|video\s+call|phone\s+call)\b))"
     r"(?:\s+(?:me|us))?\s+(?:a|an|the|my|some|\w+)", re.I)
+_VIDEO_WORDS = r"(?:video|videos|short|shorts|reel|reels|clip|youtube\s+short)"
+_VIDEO = re.compile(
+    r"^(?:make|create|generate|produce|render|build|shoot|do)\s+(?:me\s+|us\s+)?(?:(?:a|an|one|the|my|some)\s+)?"
+    r"(?:(?:new|quick|short|small|3d|3-d|youtube|yt|hindi|english|trending|cool|animated|vertical|"
+    r"landscape|horizontal|long|full|\d{1,3}[- ]?(?:s|sec|second|seconds))\s+)*"
+    rf"{_VIDEO_WORDS}\b"
+    r"(?!\s+(?:call|calls|player|editor|app|apps|game|website|site|downloader|converter|chat)\b)", re.I)
+_VIDEO_HI = re.compile(r"\bvideo\s+bana(?:o|do|iye|ao|na)\b|वीडियो\s+बना", re.I)
 _NOTE = re.compile(r"^(?:remember|note that|make a note|take a note|write a note|save a note|note down)\b", re.I)
 _RESEARCH = re.compile(
     r"^(?:research|find out|look up|lookup|search for|search|investigate|compare|find information|"
@@ -44,7 +52,8 @@ _START_TRADING = re.compile(r"\b(?:start|begin|resume|arm)\s+(?:live\s+)?trading
 _STOP_TRADING = re.compile(r"\b(?:stop|end|pause|halt|disarm)\s+(?:live\s+)?trading\b", re.I)
 
 VERB = {"builder": "building", "coding": "working on", "research": "researching",
-        "memory": "working on", "browser": "browsing for", "task": "handling", "system": "checking"}
+        "memory": "working on", "browser": "browsing for", "task": "handling", "system": "checking",
+        "video": "working on"}
 
 
 _QUOTES = "`\"'\u201c\u201d\u2018\u2019"
@@ -91,6 +100,8 @@ def match(text: str) -> dict:
             # "start build ..." -> builder
             role = "builder"
         return _agent(role, goal)
+    if _VIDEO.match(t) or _VIDEO_HI.search(t):
+        return _agent("video", t)
     if _NOTE.match(t):
         return _agent("memory", t)
     if _CODING.match(t):

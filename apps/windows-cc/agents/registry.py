@@ -82,4 +82,16 @@ ROLES = [
             "files needs operator approval; prefer creating new files."
         ),
     },
+    {
+        "id": "video",
+        "name": "Video",
+        "tools": [],
+        "mcp": False,
+        "pipeline": "video",
+        "prompt": (
+            "Video Studio: researches today's trend (Google Trends + YouTube + news), writes a scene script, "
+            "records an edge-tts voiceover, renders 3D scenes on the CPU and saves an MP4 + thumbnail + "
+            "title/description/tags in workspace/videos/<slug>. Never uploads anything."
+        ),
+    },
 ]

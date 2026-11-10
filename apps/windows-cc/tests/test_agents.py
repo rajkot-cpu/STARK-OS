@@ -15,7 +15,7 @@ class TestAgents(unittest.TestCase):
     def test_roles_six_plus_builder(self):
         self.assertEqual(
             {r["id"] for r in ROLES},
-            {"coding", "research", "memory", "browser", "task", "system", "builder"},
+            {"coding", "research", "memory", "browser", "task", "system", "builder", "video"},
         )
 
     def test_start_stop_standby(self):

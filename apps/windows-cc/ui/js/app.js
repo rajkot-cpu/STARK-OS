@@ -123,6 +123,7 @@ function renderAgents(agents) {
         ${isErr ? `<div class="agent-err">${esc(det)}</div>` : ""}
         ${reply && !isErr ? `<div class="muted agent-reply">${reply}</div>` : ""}
         ${files ? `<div class="muted small">Files in ${esc(a.workspace || "workspace")}:</div><ul class="agent-files">${files}</ul>` : ""}
+        ${a.folder ? `<button class="small" data-open-folder="${esc(a.folder)}">Open folder</button>` : ""}
         ${steps ? `<ul class="agent-steps">${steps}</ul>` : ""}
         ${a.pending ? `<div class="tool-r3"><div class="gold">${esc(a.pending.label)} — needs your R3 approval</div>
           ${a.pending.args_preview ? `<code>${esc(a.pending.args_preview)}</code>` : ""}
@@ -131,7 +132,7 @@ function renderAgents(agents) {
           <button data-tool-reject="${a.id}">Reject</button></div>` : ""}
         ${pending ? `<div class="shell-r3"><div class="muted">Pending shell (R3):</div><code>${esc(pending)}</code>
           <button data-shell-confirm="${a.id}">Confirm shell</button></div>` : ""}
-        <input class="agent-goal" data-goal-for="${a.id}" placeholder="Goal — e.g. ${a.id === "builder" ? "build a hello-world page called test-site" : "what should it do?"}" />
+        <input class="agent-goal" data-goal-for="${a.id}" placeholder="Goal — e.g. ${a.id === "builder" ? "build a hello-world page called test-site" : a.id === "video" ? "make a 3D short on today's trend in India" : "what should it do?"}" />
       </div>
       <button data-agent="${a.id}" data-act="${a.state === "active" ? "stop" : "start"}">
         ${a.state === "active" ? "Stop" : "Start"}
@@ -155,6 +156,12 @@ function renderAgents(agents) {
     const el = document.querySelector(`#page-${document.querySelector(".page.active")?.id?.slice(5) || "home"} [data-goal-for="${focused}"]`);
     if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
   }
+  document.querySelectorAll("[data-open-folder]").forEach((btn) => {
+    btn.onclick = async () => {
+      const r = await call("open_folder", btn.dataset.openFolder);
+      if (!r.ok) banner(r.error || "could not open folder");
+    };
+  });
   document.querySelectorAll("[data-shell-confirm]").forEach((btn) => {
     btn.onclick = async () => {
       const cmd = pendingShell[btn.dataset.shellConfirm] || "";
