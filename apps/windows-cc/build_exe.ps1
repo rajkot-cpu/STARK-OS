@@ -9,6 +9,9 @@ if ($LASTEXITCODE -ne 0) { throw "pip install openwakeword failed" }
 if (Test-Path "$JarvisRoot\apps\windows-panel\requirements.txt") {
   python -m pip install -r "$JarvisRoot\apps\windows-panel\requirements.txt"
 }
+# Resolve MSVC runtime DLLs from System32 first: an old msvcp140.dll (14.27, e.g. from a
+# JDK on PATH) gets bundled otherwise and crashes onnxruntime/ctranslate2 (0xc0000005).
+$env:PATH = "$env:SystemRoot\System32;" + $env:PATH
 # panel_api/voice from windows-panel; lib_jarvis + win scripts from scripts\win.
 python -m PyInstaller --noconfirm --clean --onefile --windowed --name Jarvis `
   --paths "$JarvisRoot\scripts\win" `
@@ -36,7 +39,7 @@ python -m PyInstaller --noconfirm --clean --onefile --windowed --name Jarvis `
   --collect-submodules av --hidden-import tokenizers --collect-submodules huggingface_hub `
   --collect-all edge_tts --hidden-import aiohttp `
   --collect-submodules mss --hidden-import PIL.Image `
-  --collect-submodules mcp --collect-submodules mcp_types --collect-submodules anyio `
+  --hidden-import mcp --collect-submodules mcp.client --collect-submodules mcp.shared --collect-submodules mcp.os --hidden-import mcp.types --collect-submodules mcp_types --collect-submodules anyio `
   --collect-all ddgs --collect-binaries primp --hidden-import primp --hidden-import lxml `
   --icon ..\windows-panel\assets\jarvis.ico --add-data "ui;ui" `
   --collect-all webview `
