@@ -3,9 +3,15 @@ $ErrorActionPreference = "Stop"
 Set-Location "$JarvisRoot\apps\windows-cc"
 python -m pip install -r requirements.txt
 if ($LASTEXITCODE -ne 0) { throw "pip install failed" }
+# Wake word: ONNX-only, without scipy/scikit-learn (training-only deps).
+python -m pip install --no-deps "openwakeword==0.4.0"
+if ($LASTEXITCODE -ne 0) { throw "pip install openwakeword failed" }
 if (Test-Path "$JarvisRoot\apps\windows-panel\requirements.txt") {
   python -m pip install -r "$JarvisRoot\apps\windows-panel\requirements.txt"
 }
+# Resolve MSVC runtime DLLs from System32 first: an old msvcp140.dll (14.27, e.g. from a
+# JDK on PATH) gets bundled otherwise and crashes onnxruntime/ctranslate2 (0xc0000005).
+$env:PATH = "$env:SystemRoot\System32;" + $env:PATH
 # panel_api/voice from windows-panel; lib_jarvis + win scripts from scripts\win.
 python -m PyInstaller --noconfirm --clean --onefile --windowed --name Jarvis `
   --paths "$JarvisRoot\scripts\win" `
@@ -23,6 +29,18 @@ python -m PyInstaller --noconfirm --clean --onefile --windowed --name Jarvis `
   --collect-all speech_recognition `
   --hidden-import pyttsx3 --hidden-import pyttsx3.drivers --hidden-import pyttsx3.drivers.sapi5 `
   --hidden-import win32com.client --hidden-import pythoncom `
+  --hidden-import cc_settings --hidden-import tts --hidden-import wakeword --hidden-import mcp_client `
+  --hidden-import web_search --hidden-import screen --hidden-import winsound `
+  --hidden-import openwakeword --hidden-import openwakeword.model --hidden-import openwakeword.utils `
+  --hidden-import openwakeword.vad --collect-data openwakeword `
+  --exclude-module scipy --exclude-module sklearn --exclude-module torch --exclude-module tflite_runtime `
+  --collect-binaries onnxruntime --hidden-import onnxruntime `
+  --collect-all faster_whisper --collect-binaries ctranslate2 --collect-submodules ctranslate2 `
+  --collect-submodules av --hidden-import tokenizers --collect-submodules huggingface_hub `
+  --collect-all edge_tts --hidden-import aiohttp `
+  --collect-submodules mss --hidden-import PIL.Image `
+  --hidden-import mcp --collect-submodules mcp.client --collect-submodules mcp.shared --collect-submodules mcp.os --hidden-import mcp.types --collect-submodules mcp_types --collect-submodules anyio `
+  --collect-all ddgs --collect-binaries primp --hidden-import primp --hidden-import lxml `
   --icon ..\windows-panel\assets\jarvis.ico --add-data "ui;ui" `
   --collect-all webview `
   host_main.py

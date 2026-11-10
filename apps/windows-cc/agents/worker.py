@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import threading
+import uuid
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -144,6 +145,35 @@ class AgentHub:
         self._last_reply = {r["id"]: "" for r in ROLES}
         self._steps = {r["id"]: [] for r in ROLES}
         self._goals = {r["id"]: "" for r in ROLES}
+        # Pending R3 tool requests (MCP / screen) awaiting operator confirm.
+        self._pending: dict[str, dict] = {}
+        self._mcp_maps: dict[str, dict] = {r["id"]: {} for r in ROLES}
+
+    def pending(self, role_id: str) -> dict | None:
+        p = self._pending.get(role_id)
+        return dict(p) if p else None
+
+    def take_pending(self, role_id: str, token: str) -> dict | None:
+        """Pop the pending R3 tool request iff the token matches."""
+        p = self._pending.get(role_id)
+        if not p or not token or p.get("token") != token:
+            return None
+        self._pending.pop(role_id, None)
+        if str(self._detail.get(role_id, "")).startswith("needs_r3_tool:"):
+            self._detail[role_id] = "tool confirmed"
+        self._steps[role_id] = [s for s in self._steps[role_id] if not s.startswith("needs_r3_tool:")]
+        return p
+
+    def reject_pending(self, role_id: str) -> bool:
+        if self._pending.pop(role_id, None) is None:
+            return False
+        self._detail[role_id] = "tool rejected"
+        self._steps[role_id] = [s for s in self._steps[role_id] if not s.startswith("needs_r3_tool:")]
+        return True
+
+    def record_result(self, role_id: str, text: str) -> None:
+        if role_id in self._last_reply:
+            self._last_reply[role_id] = str(text)[:2000]
 
     def clear_r3(self, role_id: str) -> bool:
         """Clear a pending needs_r3 detail after the user confirmed the shell command."""
@@ -166,6 +196,7 @@ class AgentHub:
                     "last_reply": self._last_reply[rid],
                     "steps": list(self._steps[rid]),
                     "tools": r["tools"],
+                    "pending": _pending_view(self._pending.get(rid)),
                 }
             )
         return out
@@ -179,6 +210,7 @@ class AgentHub:
         self._goals[role_id] = (goal or "").strip()
         self._steps[role_id] = []
         self._last_reply[role_id] = ""
+        self._pending.pop(role_id, None)
         self._detail[role_id] = "starting"
         self._state[role_id] = "active"
         t = threading.Thread(target=self._run, args=(role_id,), daemon=True)
@@ -219,6 +251,21 @@ class AgentHub:
         tools = AgentTools(self.root)
         allowed = set(role["tools"])
         declarations = _declarations_for(allowed)
+        self._mcp_maps[role_id] = {}
+        if role.get("mcp"):
+            try:
+                from mcp_client import list_tools
+
+                for t in list_tools(self.root):
+                    if t["name"] in allowed:
+                        continue
+                    self._mcp_maps[role_id][t["name"]] = t
+                    allowed.add(t["name"])
+                    declarations.append(t["decl"])
+                if self._mcp_maps[role_id]:
+                    self._steps[role_id].append(f"mcp tools: {len(self._mcp_maps[role_id])}")
+            except Exception as e:
+                self._steps[role_id].append(f"mcp unavailable: {type(e).__name__}")
         goal = self._goals[role_id] or (
             "Give a short status using available tools if helpful."
         )
@@ -278,9 +325,31 @@ class AgentHub:
         self._steps[role_id].append(
             f"{name}({json.dumps(args, ensure_ascii=False)[:120]})"
         )
+        mcp = self._mcp_maps.get(role_id, {}).get(name)
+        if mcp:
+            # Every MCP tool call is R3; the model can never mark it confirmed.
+            return {"ok": False, "needs_r3": True, "kind": "mcp", "server": mcp["server"],
+                    "tool": mcp["tool"], "args": dict(args or {})}
         return tools.call(name, args)
 
     def _halt_r3(self, role_id: str, result: dict) -> None:
+        kind = result.get("kind")
+        if kind in ("mcp", "screen"):
+            token = uuid.uuid4().hex[:12]
+            if kind == "mcp":
+                label = f"MCP {result.get('server')}.{result.get('tool')}"
+                pend = {"kind": "mcp", "server": str(result.get("server")), "tool": str(result.get("tool")),
+                        "args": result.get("args") or {}, "token": token, "label": label}
+            else:
+                label = "Screen capture"
+                pend = {"kind": "screen", "question": str(result.get("question") or ""),
+                        "token": token, "label": label}
+            self._pending[role_id] = pend
+            self._steps[role_id].append(f"needs_r3_tool: {label}"[:160])
+            self._detail[role_id] = "needs_r3_tool:" + label
+            self._last_reply[role_id] = f"{label} needs operator R3 approval."
+            self._state[role_id] = "standby"
+            return
         cmd = str(result.get("command") or "")
         self._steps[role_id].append(f"needs_r3: {cmd[:120]}")
         self._detail[role_id] = "needs_r3:" + cmd
@@ -331,6 +400,17 @@ class AgentHub:
                 f"Result: {json.dumps(result)[:4000]}\n"
             )
         self._finish_max(role_id)
+
+
+def _pending_view(p: dict | None) -> dict | None:
+    if not p:
+        return None
+    out = {"kind": p.get("kind"), "label": p.get("label"), "token": p.get("token")}
+    if p.get("kind") == "mcp":
+        out["args_preview"] = json.dumps(p.get("args") or {}, ensure_ascii=False)[:400]
+    else:
+        out["question"] = str(p.get("question") or "")[:300]
+    return out
 
 
 def _wrap(result) -> dict:

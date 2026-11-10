@@ -4,6 +4,7 @@ ROLES = [
         "id": "coding",
         "name": "Coding",
         "tools": ["list_dir", "read_file", "code_search", "shell"],
+        "mcp": True,
         "prompt": (
             "You are the Coding agent for STARK OS. Stay inside JARVIS_ROOT. "
             "Use list_dir/read_file/code_search to inspect code; shell is allowlisted "
@@ -13,10 +14,11 @@ ROLES = [
     {
         "id": "research",
         "name": "Research",
-        "tools": ["web_fetch", "list_dir", "read_file", "code_search"],
+        "tools": ["web_search", "web_fetch", "list_dir", "read_file", "code_search"],
+        "mcp": True,
         "prompt": (
-            "You are the Research agent. Use web_fetch for public https pages and "
-            "summarize honestly. Do not invent sources."
+            "You are the Research agent. Use web_search to find sources and web_fetch "
+            "for public https pages; summarize honestly with URLs. Do not invent sources."
         ),
     },
     {
@@ -31,15 +33,18 @@ ROLES = [
     {
         "id": "browser",
         "name": "Browser",
-        "tools": ["web_fetch"],
+        "tools": ["web_search", "web_fetch", "screen_read"],
+        "mcp": True,
         "prompt": (
-            "You are the Browser agent. Fetch public http(s) URLs and report what you got."
+            "You are the Browser agent. Search the web, fetch public http(s) URLs and report "
+            "what you got. screen_read asks the operator before every capture."
         ),
     },
     {
         "id": "task",
         "name": "Task",
         "tools": ["skills_list", "skill_run", "list_dir"],
+        "mcp": True,
         "prompt": (
             "You are the Task agent. List skills and preview SKILL.md via skill_run. "
             "Do not execute shell."
@@ -48,7 +53,8 @@ ROLES = [
     {
         "id": "system",
         "name": "System",
-        "tools": ["list_dir", "read_file", "shell"],
+        "tools": ["list_dir", "read_file", "shell", "screen_read"],
+        "mcp": True,
         "prompt": (
             "You are the System agent. Read POLICY.yaml, STATE.md, and host notes. "
             "Summarize health; never start workday yourself."

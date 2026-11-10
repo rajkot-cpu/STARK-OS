@@ -12,6 +12,7 @@ const MOTIF = {
   knowledge: "tetra",
   skills: "torusKnot",
   workflows: "ring",
+  settings: "torus",
 };
 
 function makeGeometry(kind) {

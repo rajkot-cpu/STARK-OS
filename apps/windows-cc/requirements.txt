@@ -7,3 +7,14 @@ openai>=1.40
 google-generativeai>=0.7
 groq>=0.9
 PyAudio>=0.2.14
+# gh-six features (pinned to versions tested 2026-11-10)
+onnxruntime>=1.20,<2
+tqdm>=4
+faster-whisper==1.2.1
+edge-tts==7.3.1
+mss==10.2.0
+mcp==2.3.0
+ddgs==9.16.1
+Pillow>=10
+# openwakeword==0.4.0 is installed with --no-deps by build_exe.ps1
+# (its scipy/scikit-learn deps are only for verifier training; stubbed at runtime)

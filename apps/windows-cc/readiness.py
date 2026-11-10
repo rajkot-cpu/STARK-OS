@@ -203,6 +203,51 @@ def _cached_probes() -> list[dict] | None:
         return None
 
 
+def _importable(name: str) -> bool:
+    try:
+        __import__(name)
+        return True
+    except Exception:
+        return False
+
+
+def compute_extras(root: Path) -> list[dict]:
+    """Optional features: info only, never part of the score (opt-ins may be off)."""
+    out = []
+
+    def add(cid, label, ok, note):
+        out.append({"id": cid, "label": label, "ok": bool(ok), "note": note, "weight": 0, "info": True})
+
+    try:
+        from cc_settings import load
+
+        s = load(root)
+    except Exception:
+        s = {"wake_word": False, "whisper_model": "tiny.en"}
+    try:
+        from stt import whisper_installed, whisper_model_ready
+
+        model_ok = whisper_installed() and whisper_model_ready(root, s.get("whisper_model", "tiny.en"))
+    except Exception:
+        model_ok = False
+    add("offline_stt", "Offline speech model downloaded", model_ok,
+        "Settings > Download offline model (or it downloads on first Tap to Speak)")
+    add("wake_word", "Hey Jarvis wake word on", s.get("wake_word"),
+        "Optional: Settings > Always listen for Hey Jarvis")
+    add("neural_voice", "Natural voice (edge-tts) installed", _importable("edge_tts"),
+        "Falls back to the Windows voice when offline")
+    add("web_search", "Agent web search installed", _importable("ddgs"), "Research/Browser agents")
+    try:
+        from mcp_client import load_servers
+
+        n = len([x for x in load_servers(root)[0] if x["enabled"]])
+    except Exception:
+        n = 0
+    add("mcp_servers", f"MCP tool servers enabled: {n}", n > 0,
+        "Optional: add servers to config/mcp_servers.json")
+    return out
+
+
 def compute_readiness(
     root: Path | str,
     *,
@@ -257,4 +302,8 @@ def compute_readiness(
                 "fix": spec["fix"],
             }
         )
-    return {"score_pct": int(score), "checks": checks}
+    try:
+        extras = compute_extras(root)
+    except Exception:
+        extras = []
+    return {"score_pct": int(score), "checks": checks, "extras": extras}
