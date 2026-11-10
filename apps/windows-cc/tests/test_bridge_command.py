@@ -110,6 +110,12 @@ class CommandTests(unittest.TestCase):
             said = api.speak.call_args.args[0]
             self.assertIn("Builder finished", said)
             self.assertIn("Created 1 file", said)
+            self.assertNotIn("`", said)
+
+    def test_speakable(self):
+        from bridge_api import _speakable
+        self.assertEqual(_speakable("The `memory/` folder: **a** [doc](https://x.y)"), "The memory/ folder: a doc")
+        self.assertLessEqual(len(_speakable("word " * 200)), 201)
 
 
 if __name__ == "__main__":

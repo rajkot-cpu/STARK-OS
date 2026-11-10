@@ -44,7 +44,7 @@ _START_TRADING = re.compile(r"\b(?:start|begin|resume|arm)\s+(?:live\s+)?trading
 _STOP_TRADING = re.compile(r"\b(?:stop|end|pause|halt|disarm)\s+(?:live\s+)?trading\b", re.I)
 
 VERB = {"builder": "building", "coding": "working on", "research": "researching",
-        "memory": "noting", "browser": "browsing for", "task": "handling", "system": "checking"}
+        "memory": "working on", "browser": "browsing for", "task": "handling", "system": "checking"}
 
 
 def clean(text: str) -> str:

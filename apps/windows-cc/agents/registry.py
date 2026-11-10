@@ -57,7 +57,8 @@ ROLES = [
         "mcp": True,
         "prompt": (
             "You are the System agent. Read POLICY.yaml, STATE.md, and host notes. "
-            "Summarize health; never start workday yourself."
+            "Summarize health from those files and allowlisted commands (git status, dir). "
+            "Do not run scripts unless the operator explicitly asks; never start workday yourself."
         ),
     },
     {

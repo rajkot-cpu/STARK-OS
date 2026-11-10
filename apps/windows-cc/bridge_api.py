@@ -22,6 +22,21 @@ def _system_status(status: dict) -> str:
     return "SYSTEMS NOMINAL"
 
 
+def _speakable(text: str, limit: int = 200) -> str:
+    """Markdown-free, short text for TTS (cut at a sentence end when possible)."""
+    import re
+
+    t = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", str(text or ""))
+    t = re.sub(r"https?://\S+", "", t)
+    t = re.sub(r"[`*#>|]+", "", t)
+    t = re.sub(r"\s+", " ", t).strip()
+    if len(t) <= limit:
+        return t
+    cut = t[:limit]
+    end = max(cut.rfind(". "), cut.rfind("! "), cut.rfind("? "))
+    return cut[: end + 1] if end > 60 else cut.rsplit(" ", 1)[0] + "…"
+
+
 class BridgeApi:
     def __init__(self, root: Path):
         self.root = Path(root)
@@ -117,8 +132,7 @@ class BridgeApi:
                 extra = f"; files: {', '.join(files[:8])}" if files else ""
                 cc_settings.audit(self.root, f"agent-{role_id}", "agent_done",
                                   f"{summary[:200]}{extra} [{prov}]")
-                first = summary.split("\n", 1)[0].split(". ", 1)[0][:160]
-                say = f"{name} finished. " + (f"Created {len(files)} file{'s' if len(files) != 1 else ''}. " if files else "") + first
+                say = f"{name} finished. " + (f"Created {len(files)} file{'s' if len(files) != 1 else ''}. " if files else "") + _speakable(summary)
             elif kind == "needs_approval":
                 label = (row.get("pending") or {}).get("label") or str(row.get("detail") or "")[:120]
                 cc_settings.audit(self.root, f"agent-{role_id}", "agent_needs_approval", label)
