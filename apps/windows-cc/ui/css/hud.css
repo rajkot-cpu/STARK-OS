@@ -257,3 +257,28 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 .agent-files { font-size: 11px; margin: 4px 0 0; padding-left: 16px; color: #7fe3ff; }
 .agent-goal-shown { font-size: 11px; color: var(--text); margin-top: 2px; opacity: .85; }
 .tool-r3 code { display: block; white-space: pre-wrap; max-height: 120px; overflow: auto; font-size: 11px; }
+
+/* 3D agent orbit (Agents page + Home AI Core) */
+.orbit-wrap { display: grid; grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr); gap: 12px; margin-bottom: 12px; }
+.orbit-stage { position: relative; height: 440px; overflow: hidden; border-radius: 10px;
+  background: radial-gradient(circle at 50% 50%, rgba(56,212,255,.08), transparent 65%); }
+.orbit-stage canvas { width: 100%; height: 100%; display: block; }
+.orbit-labels { position: absolute; inset: 0; pointer-events: none; }
+.orbit-label { position: absolute; left: 0; top: 0; pointer-events: auto; cursor: pointer; white-space: nowrap;
+  font-size: 11px; padding: 2px 7px; border-radius: 10px; background: rgba(4,14,22,.75);
+  border: 1px solid var(--c, #38d4ff); color: var(--c, #38d4ff); opacity: .6; }
+.orbit-label.st-working { opacity: 1; box-shadow: 0 0 10px var(--c, #38d4ff); }
+.orbit-label.st-waiting { opacity: 1; border-color: #ffc14d; color: #ffc14d; }
+.orbit-label.st-error { opacity: 1; border-color: #ff3b3b; color: #ff7a7a; }
+.orbit-label.sel { opacity: 1; background: rgba(56,212,255,.18); font-weight: 600; }
+.orbit-legend { position: absolute; left: 10px; bottom: 8px; display: flex; gap: 10px; color: var(--muted); }
+.orbit-legend .lg::before { content: "●"; margin-right: 4px; }
+.orbit-legend .idle::before { color: #3d6a80; }
+.orbit-legend .working::before { color: #38d4ff; text-shadow: 0 0 6px #38d4ff; }
+.orbit-legend .waiting::before { color: #ffc14d; }
+.orbit-legend .error::before { color: #ff3b3b; }
+.orbit-legend .done::before { color: #3dff9a; }
+.orbit-detail { max-height: 440px; overflow: auto; }
+.orbit-detail h3 { margin-top: 0; }
+.agent-card.selected { outline: 1px solid var(--cyan); box-shadow: 0 0 12px rgba(56,212,255,.35); }
+#sphere { cursor: pointer; }

@@ -72,7 +72,7 @@
             <ul id="health-list"></ul>
           </div>
           <div class="core panel">
-            <canvas id="sphere" width="320" height="320" aria-label="AI Core"></canvas>
+            <canvas id="sphere" width="320" height="320" aria-label="AI Core with agents" title="Click an agent to open it"></canvas>
             <div class="core-label">JARVIS AI CORE v3.0.0</div>
           </div>
           <div class="feed panel">
@@ -124,7 +124,16 @@
 
       <!-- OTHER ROUTES -->
       <section id="page-core" class="page"><h2>AI Core</h2><div id="core-page"></div></section>
-      <section id="page-agents" class="page"><h2>Agents</h2><p class="muted small">Type or say a command (e.g. "Jarvis, build me a hello-world page called test-site") — the right agent starts at once. Builder writes only inside <code>jarvis\workspace</code>; overwrite, delete and running code ask you first.</p><div id="agents-page"></div></section>
+      <section id="page-agents" class="page"><h2>Agents</h2><p class="muted small">Type or say a command (e.g. "Jarvis, build me a hello-world page called test-site") — the right agent starts at once. Builder writes only inside <code>jarvis\workspace</code>; overwrite, delete and running code ask you first.</p>
+        <div class="orbit-wrap panel">
+          <div class="orbit-stage">
+            <canvas id="agents-orbit" aria-label="Agents orbiting the AI Core"></canvas>
+            <div id="orbit-labels" class="orbit-labels"></div>
+            <div class="orbit-legend small"><span class="lg idle">idle</span><span class="lg working">working</span><span class="lg waiting">needs approval</span><span class="lg error">error</span><span class="lg done">done</span></div>
+          </div>
+          <div id="orbit-detail" class="orbit-detail"><div class="muted">Click an agent node to see its recent steps.</div></div>
+        </div>
+        <div id="agents-page"></div></section>
       <section id="page-tasks" class="page"><h2>Tasks</h2><p class="muted">Task list from Task agent / checklist files when present.</p><div id="tasks-page"></div></section>
       <section id="page-calendar" class="page"><h2>Calendar</h2><div id="calendar-page"></div></section>
       <section id="page-memory" class="page"><h2>Memory</h2><div id="memory-page"></div></section>
