@@ -9,7 +9,7 @@ import urllib.request
 from pathlib import Path
 
 from agent_tools import TOOL_SCHEMAS, AgentTools
-from llm_providers import _resolve_key, load_secrets
+from llm_providers import USER_AGENT, _resolve_key, load_secrets  # UA: Groq/Cloudflare 403s Python-urllib
 
 from .registry import ROLES
 
@@ -42,7 +42,7 @@ def _gemini_json(system: str, user: str, key: str, timeout: float = 45.0) -> str
     req = urllib.request.Request(
         url,
         data=data,
-        headers={"Content-Type": "application/json"},
+        headers={"Content-Type": "application/json", "User-Agent": USER_AGENT},
         method="POST",
     )
     try:
@@ -108,7 +108,7 @@ def _gemini_turn(
     req = urllib.request.Request(
         url,
         data=json.dumps(body).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers={"Content-Type": "application/json", "User-Agent": USER_AGENT},
         method="POST",
     )
     try:
@@ -195,7 +195,8 @@ def _openai_turn(system: str, messages: list, tools: list, key: str, *,
     req = urllib.request.Request(
         url,
         data=json.dumps(body).encode("utf-8"),
-        headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"},
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}",
+                 "User-Agent": USER_AGENT},
         method="POST",
     )
     try:

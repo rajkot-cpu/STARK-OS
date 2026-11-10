@@ -7,7 +7,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from llm_providers import load_secrets, _resolve_key
+from llm_providers import USER_AGENT, load_secrets, _resolve_key
 
 
 SYSTEM = (
@@ -37,7 +37,7 @@ def _gemini_reply(prompt: str, key: str, timeout: float = 45.0) -> str:
     req = urllib.request.Request(
         url,
         data=data,
-        headers={"Content-Type": "application/json"},
+        headers={"Content-Type": "application/json", "User-Agent": USER_AGENT},
         method="POST",
     )
     try:
@@ -72,7 +72,8 @@ def _openai_reply(prompt: str, key: str, timeout: float = 45.0, *,
     req = urllib.request.Request(
         url,
         data=data,
-        headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"},
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}",
+                 "User-Agent": USER_AGENT},
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=timeout) as resp:
