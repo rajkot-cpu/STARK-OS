@@ -83,6 +83,20 @@ function plasmaMaterial(uTime) {
   });
 }
 
+// White-hot centre: white at the middle, cyan towards the limb (no flat white disc).
+function hotCoreMaterial() {
+  return new THREE.ShaderMaterial({
+    uniforms: { uI: { value: 1 } },
+    vertexShader: `varying vec3 vN; varying vec3 vV; void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0);
+      vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `uniform float uI; varying vec3 vN; varying vec3 vV;
+      void main(){ float d = max(dot(normalize(vN), normalize(vV)), 0.0);
+        vec3 c = mix(vec3(0.1,0.7,1.0), vec3(1.0,1.0,0.97), pow(d, 2.2));
+        gl_FragColor = vec4(c * (0.35 + 0.8 * pow(d, 1.5)) * uI, 1.0); }`,
+    ...ADD,
+  });
+}
+
 // Soft outer atmosphere (back-side fresnel) so the core looks volumetric.
 function atmosphereMaterial() {
   return new THREE.ShaderMaterial({
@@ -214,7 +228,7 @@ export function mountAgentOrbit(canvas, opts = {}) {
   const coreGroup = new THREE.Group();
   scene.add(coreGroup);
   const uTime = { value: 0 };
-  const energyMat = own(new THREE.MeshBasicMaterial({ color: 0xeaffff }));
+  const energyMat = own(hotCoreMaterial());
   const energy = new THREE.Mesh(own(new THREE.SphereGeometry(0.24 * K, 32, 24)), energyMat);
   coreGroup.add(energy);
   const plasmaMat = own(plasmaMaterial(uTime));
@@ -549,7 +563,7 @@ export function mountAgentOrbit(canvas, opts = {}) {
     const spin = 0.3 + health * 0.5 + working * 0.12 + vAmp * 0.4;
     const breathe = 0.5 + 0.5 * Math.sin(ts * 1.1);
     energy.scale.setScalar(pulse.scale * (1 + 0.14 * vAmp));
-    energyMat.color.setRGB(0.78 + 0.22 * pulse.beat, 0.96, 1);
+    energyMat.uniforms.uI.value = 0.85 + 0.25 * pulse.beat + 0.3 * vAmp;
     plasma.scale.setScalar(1 + 0.025 * breathe + 0.05 * pulse.beat * pulse.intensity + 0.08 * vAmp);
     plasma.rotation.y += 0.25 * dt;
     plasmaMat.uniforms.uI.value = 0.75 + 0.35 * pulse.intensity + 0.5 * vAmp;
@@ -588,6 +602,9 @@ export function mountAgentOrbit(canvas, opts = {}) {
     particles.rotation.y += 0.02 * dt;
 
     // agents
+    const coreDist = camera.position.distanceTo(coreGroup.position);
+    tmp.copy(coreGroup.position).project(camera);
+    const coreScr = { x: (tmp.x * 0.5 + 0.5) * w0, y: (-tmp.y * 0.5 + 0.5) * h0 };
     nodes.forEach((nd) => {
       const flash = tracker.flash(nd.id, t);
       const v = visualFor(nd.state, flash);
@@ -670,11 +687,15 @@ export function mountAgentOrbit(canvas, opts = {}) {
           nd.label.lastChild.textContent = badge;
           nd.badge = badge;
         }
-        const cls = `orbit-label st-${flash === "done" ? "done" : nd.state}${sel ? " sel" : ""}${hov ? " hov" : ""}`;
-        if (nd.label.className !== cls) nd.label.className = cls;
+        const behind = tmp.distanceTo(camera.position) > coreDist;
         tmp.project(camera);
         const x = (tmp.x * 0.5 + 0.5) * w0;
         const y = (-tmp.y * 0.5 + 0.5) * h0;
+        // idle tags passing behind the reactor fade out so they do not pile up over the core
+        const hide = behind && !sel && !hov && nd.state === "idle" && !flash &&
+          Math.hypot(x - coreScr.x, y - coreScr.y) < stats.reactorDiamPx * 0.45;
+        const cls = `orbit-label st-${flash === "done" ? "done" : nd.state}${sel ? " sel" : ""}${hov ? " hov" : ""}${hide ? " behind" : ""}`;
+        if (nd.label.className !== cls) nd.label.className = cls;
         nd.label.style.transform = `translate(${x.toFixed(1)}px, ${(y + 16).toFixed(1)}px) translateX(-50%)`;
         nd.label.style.zIndex = sel || hov ? "3" : (tmp.z < 0.98 ? "2" : "1");
       }
