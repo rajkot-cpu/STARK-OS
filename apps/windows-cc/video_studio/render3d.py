@@ -289,8 +289,8 @@ class SceneRenderer:
             F, tri = self._faces_array(o)
             wv = self._obj_world(o, t, p)
             xy, z = self._project(wv, eye, R)
-            a, b, c = wv[F[:, 0]], wv[F[:, 1]], wv[F[:, 2]]
-            n = np.cross(b - a, c - a)
+            # Diagonal cross: stays valid for sphere pole quads whose first two vertices coincide.
+            n = np.cross(wv[F[:, 2]] - wv[F[:, 0]], wv[F[:, 3]] - wv[F[:, 1]])
             nn = np.linalg.norm(n, axis=1)
             good = nn > 1e-9
             n = n / np.where(good, nn, 1)[:, None]

@@ -17,6 +17,7 @@ MAX_STEPS = 12
 MODEL = "gemini-3.1-flash-lite-preview"
 OPENAI_MODEL = "gpt-4o-mini"
 MAX_OUT_TOKENS = 4096
+DEFAULT_VIDEO_GOAL = "Make a 3D short on today's trend in India"
 PROVIDER_LABEL = {"gemini": "Gemini", "openai": "OpenAI", "groq": "Groq"}
 
 
@@ -680,6 +681,8 @@ class AgentHub:
         try:
             factory = self.video_deps or default_deps
             deps = factory(self.root, providers, progress=progress, on_provider=on_provider)
+            if not self._goals[role_id]:
+                self._goals[role_id] = DEFAULT_VIDEO_GOAL
             res = run_job(self.root, self._goals[role_id], deps, progress=progress,
                           should_stop=self._stop[role_id].is_set)
         except Cancelled:

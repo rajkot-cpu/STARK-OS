@@ -35,7 +35,7 @@ def build_ass(script: dict, scenes: list[tuple[float, float]], width: int, heigh
         "Alignment, MarginL, MarginR, MarginV, Encoding",
         f"Style: Cap,{font},{cap},&H00FFFFFF,&H00FFFFFF,&H00000000,&H96000000,-1,0,0,0,100,100,0,0,1,"
         f"{max(3, cap // 12)},2,2,{margin},{margin},{mv_cap},1",
-        f"Style: Title,{font},{ttl},&H0000E1FF,&H00FFFFFF,&H00200010,&H96000000,-1,0,0,0,100,100,1,0,1,"
+        f"Style: Title,{font},{ttl},&H0000E1FF,&H00FFFFFF,&H00200010,&H96000000,-1,0,0,0,100,100,0,0,1,"
         f"{max(4, ttl // 10)},3,8,{margin},{margin},{mv_ttl},1",
         "", "[Events]",
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
