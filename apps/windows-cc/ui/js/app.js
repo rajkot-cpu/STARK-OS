@@ -1,5 +1,5 @@
 // apps/windows-cc/ui/js/app.js
-import { call, whenReady } from "./bridge.js";
+import { call, uiLog, whenReady } from "./bridge.js";
 import { mountNavIcons } from "./icons3d.js";
 import { mountCore } from "./core3d.js";
 
@@ -201,7 +201,7 @@ async function runCommand(text) {
   if (!t) return;
   banner("…");
   const r = await call("command", t);
-  if (!r.ok) { banner(r.error || "command failed"); return; }
+  if (!r.ok) { banner(r.error || "command failed"); uiLog("warn", `command ${JSON.stringify(t)} failed: ${r.error}`, "cmd-bar"); return; }
   const d = r.data || {};
   banner(d.reply || "");
   if (d.reply) call("speak", d.reply);

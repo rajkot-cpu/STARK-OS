@@ -50,6 +50,23 @@ class IntentTests(unittest.TestCase):
         for t in ("what time is it", "how are you jarvis", "Jarvis, tell me a joke", "", "who built the taj mahal", "make sure the door is locked", "set up a meeting tomorrow", "create a reminder at 5"):
             self.assertEqual(match(t)["intent"], "chat", t)
 
+    def test_wrapped_in_quotes_or_backticks_still_routes(self):
+        # Regression: pasting `build me a snake game in html` (with backticks) fell through to chat,
+        # which then claimed to have built the game while nothing was created.
+        for t in ("`build me a snake game in html`", '"build me a snake game in html"',
+                  "“build me a snake game in html”", "'build me a snake game in html'",
+                  "```build me a snake game in html```", "  `Jarvis, build me a snake game in html.`  "):
+            m = match(t)
+            self.assertEqual((m["intent"], m.get("role")), ("agent", "builder"), t)
+            self.assertEqual(m["goal"], "Build me a snake game in html", t)
+
+    def test_start_building_phrasing(self):
+        for t in ("start building a snake game", "start making a snake game in html",
+                  "begin building a todo app"):
+            m = match(t)
+            self.assertEqual((m["intent"], m.get("role")), ("agent", "builder"), t)
+        self.assertEqual(match("start building a snake game")["goal"], "Build a snake game")
+
     def test_announce(self):
         self.assertEqual(announce("Builder", "building", "Build me a todo app"),
                          "On it. Builder is building: Build me a todo app")

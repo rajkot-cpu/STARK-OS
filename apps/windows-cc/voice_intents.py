@@ -47,11 +47,27 @@ VERB = {"builder": "building", "coding": "working on", "research": "researching"
         "memory": "working on", "browser": "browsing for", "task": "handling", "system": "checking"}
 
 
+_QUOTES = "`\"'\u201c\u201d\u2018\u2019"
+# "start building a snake game" -> "build a snake game"
+_START_VERBING = re.compile(r"^(?:start|begin|go)\s+(build|mak|creat|develop|writ)(?:e|ing)\b", re.I)
+
+
+def _unwrap(t: str) -> str:
+    """Drop quotes/backticks a pasted command was wrapped in (`...`, "...", ```...```)."""
+    t = t.strip()
+    while len(t) >= 2 and t[0] in _QUOTES and t[-1] in _QUOTES:
+        t = t[1:-1].strip()
+    return t
+
+
 def clean(text: str) -> str:
-    t = (text or "").strip()
+    t = _unwrap(text or "")
     t = _WAKE.sub("", t).strip()
     for _ in range(2):
         t = _POLITE.sub("", t).strip()
+    t = _unwrap(t.strip(" \t,.!"))
+    t = _START_VERBING.sub(lambda m: {"mak": "make", "creat": "create",
+                                      "writ": "write"}.get(m.group(1).lower(), m.group(1).lower()), t)
     return t.strip(" \t,.!")
 
 

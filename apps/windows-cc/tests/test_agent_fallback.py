@@ -78,6 +78,26 @@ class FallbackTests(unittest.TestCase):
         # Retries Gemini (rate limit) then falls back and sticks with OpenAI.
         self.assertEqual(g.call_count, 1 + w.RETRIES)
 
+    def test_gemini_and_openai_fail_falls_back_to_groq(self):
+        # Chandan's setup: Gemini rate-limited/quota, OpenAI out of credits, Groq key present.
+        g = mock.Mock(side_effect=w.ProviderUnavailable("gemini", 429, "RESOURCE_EXHAUSTED"))
+        calls = []
+
+        def oa(system, messages, tools, key, provider="openai", **kw):
+            calls.append((provider, key))
+            if provider == "openai":
+                raise w.ProviderUnavailable("openai", 429, '{"code":"insufficient_quota"}')
+            return _oa_final("hello from groq")
+
+        with mock.patch.object(w, "_gemini_turn", g), mock.patch.object(w, "_openai_turn", side_effect=oa):
+            hub = AgentHub(root=self.root, gemini_key="g", keys={"openai": "o", "groq": "q"})
+            hub._goals["builder"] = "Build me a snake game in html"
+            hub._run("builder")
+        r = row(hub, "builder")
+        self.assertEqual((r["last_reply"], r["provider"]), ("hello from groq", "groq"))
+        self.assertEqual([c[0] for c in calls], ["openai", "groq"])
+        self.assertEqual(calls[-1][1], "q")
+
     def test_all_providers_fail_reports_reasons(self):
         g = mock.Mock(side_effect=w.ProviderUnavailable("gemini", 429, ""))
         o = mock.Mock(side_effect=w.ProviderUnavailable("openai", 429, '{"code":"insufficient_quota"}'))
