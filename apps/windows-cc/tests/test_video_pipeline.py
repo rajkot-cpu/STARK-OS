@@ -178,6 +178,31 @@ class UnitBits(unittest.TestCase):
         self.assertEqual(ass.count(",Title,"), 4)
         self.assertIn("Part 2", ass)
 
+    def test_ass_title_has_no_letter_spacing(self):
+        # libass disables HarfBuzz shaping when Spacing != 0 -> broken Devanagari titles.
+        ass = build_ass(SCRIPT, [(0, 3), (3, 3), (6, 3), (9, 3)], 1080, 1920)
+        for line in ass.splitlines():
+            if line.startswith("Style:"):
+                self.assertEqual(line.split(",")[13], "0", line)
+
+    def test_sphere_pole_faces_drawn(self):
+        # Pole quads have two identical vertices; a (b-a)x(c-a) normal is zero there and the
+        # cap used to vanish, leaving a notch in the silhouette.
+        from video_studio.render3d import SceneRenderer
+        v = {"shape": "sphere", "colors": ["#00ff00", "#00ff00"], "background": ["#000000", "#000000"],
+             "camera": "orbit", "motion": "spin"}
+        r = SceneRenderer(v, 240, 240)
+        r.objects = r.objects[:1]
+        r._grid = lambda *a: None
+        r._particles = lambda *a: None
+        r._bloom = lambda im: im
+        for t in (0.3, 1.0, 1.5, 2.2, 3.0):
+            g = np.asarray(r.frame(t, 0.4))[:, :, 1] > 20
+            for line in list(g) + list(g.T):
+                idx = np.nonzero(line)[0]
+                if len(idx):
+                    self.assertTrue(line[idx.min():idx.max() + 1].all(), f"hole in sphere at t={t}")
+
     def test_render_frames_size(self):
         v = {"shape": "torus", "colors": ["#00e5ff", "#ff2bd6"], "background": ["#000000", "#111111"],
              "camera": "zoom_in", "motion": "pulse"}

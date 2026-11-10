@@ -44,6 +44,13 @@ class VideoAgentTests(unittest.TestCase):
         self.assertIn("progress", self.events)
         self.assertEqual(self.events[-1], "done")
 
+    def test_empty_goal_defaults_to_trend_video(self):
+        self.hub.video_deps = self._factory([json.dumps({"index": 1, "topic": "India vs NZ"}), json.dumps(SCRIPT)])
+        self.hub.start("video", "")
+        row = self.hub.wait("video", 30)
+        self.assertEqual(row["detail"], "done", row)
+        self.assertIn("trend", row["goal"].lower())
+
     def test_video_agent_error_is_reported(self):
         self.hub.video_deps = self._factory(["nope", "still nope"])
         self.hub.start("video", "make a short on chess")
