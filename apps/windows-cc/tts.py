@@ -53,8 +53,15 @@ def edge_synthesize(text: str, voice_id: str, out_path: str, timeout: float = ED
     import edge_tts
 
     async def _run():
-        comm = edge_tts.Communicate(text, voice_id)
-        await asyncio.wait_for(comm.save(out_path), timeout=timeout)
+        import aiohttp
+
+        # ThreadedResolver: aiodns (if installed) needs a SelectorEventLoop on Windows.
+        connector = aiohttp.TCPConnector(resolver=aiohttp.ThreadedResolver())
+        try:
+            comm = edge_tts.Communicate(text, voice_id, connector=connector)
+            await asyncio.wait_for(comm.save(out_path), timeout=timeout)
+        finally:
+            await connector.close()
 
     asyncio.run(_run())
     if not os.path.isfile(out_path) or os.path.getsize(out_path) == 0:

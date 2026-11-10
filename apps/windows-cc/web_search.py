@@ -7,15 +7,27 @@ import threading
 import urllib.error
 import urllib.request
 
-DDGS_TIMEOUT = 6
-OVERALL_TIMEOUT = 10.0
+DDGS_TIMEOUT = 5
+OVERALL_TIMEOUT = 12.0
+# Measured on chandan 2026-11-10: yahoo ~1.2 s; "auto" works but is flaky/slow.
+BACKENDS = ("yahoo", "auto")
 GROUNDING_MODEL = "gemini-3.1-flash-lite-preview"
 
 
 def _ddgs(query: str, max_results: int) -> list[dict]:
     from ddgs import DDGS
 
-    rows = DDGS(timeout=DDGS_TIMEOUT).text(query, max_results=max_results)
+    rows, last = [], None
+    for be in BACKENDS:
+        try:
+            rows = DDGS(timeout=DDGS_TIMEOUT).text(query, max_results=max_results, backend=be)
+        except Exception as e:  # "No results found" / timeouts per backend
+            last = e
+            continue
+        if rows:
+            break
+    if not rows and last is not None:
+        raise last
     out = []
     for r in rows or []:
         out.append({

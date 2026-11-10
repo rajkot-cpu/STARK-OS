@@ -94,3 +94,26 @@ class ScreenTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DdgsBackendTests(unittest.TestCase):
+    def test_tries_next_backend(self):
+        tried = []
+
+        class Fake:
+            def __init__(self, timeout=None):
+                pass
+
+            def text(self, q, max_results=5, backend="auto"):
+                tried.append(backend)
+                if backend == "yahoo":
+                    raise RuntimeError("No results found.")
+                return [{"title": "t", "href": "https://h", "body": "b"}]
+
+        import types
+        mod = types.ModuleType("ddgs")
+        mod.DDGS = Fake
+        with mock.patch.dict(sys.modules, {"ddgs": mod}):
+            rows = web_search._ddgs("q", 3)
+        self.assertEqual(tried, ["yahoo", "auto"])
+        self.assertEqual(rows[0]["url"], "https://h")
