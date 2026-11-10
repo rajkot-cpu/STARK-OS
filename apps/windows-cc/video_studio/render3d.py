@@ -324,7 +324,11 @@ class SceneRenderer:
             for i in np.argsort(-D).tolist():
                 pts = P[i][:3] if T[i] else P[i]
                 e = edges[i]
-                draw.polygon([tuple(q) for q in pts], fill=tuple(C[i]), outline=e, width=2 if e else 0)
+                poly = [tuple(q) for q in pts]
+                draw.polygon(poly, fill=tuple(C[i]))
+                if e:
+                    # NB: polygon(outline, width>1) pastes a full-frame mask per call in Pillow <12.
+                    draw.line(poly + [poly[0]], fill=e, width=2)
         return self._bloom(img)
 
     def _bloom(self, img: Image.Image) -> Image.Image:
