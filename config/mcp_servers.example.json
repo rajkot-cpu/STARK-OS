@@ -1,0 +1,19 @@
+{
+  "_comment": "Copy entries into config/mcp_servers.json. Every MCP tool call needs your R3 confirmation in the Agents page. Do not put API keys here; use secrets/api_keys.env.",
+  "servers": [
+    {
+      "name": "files",
+      "description": "Read/write files in one folder (official filesystem server; needs Node.js)",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "C:\\Users\\rajk1\\jarvis\\reports"],
+      "enabled": false
+    },
+    {
+      "name": "fetch",
+      "description": "Fetch web pages as markdown (needs uv)",
+      "command": "uvx",
+      "args": ["mcp-server-fetch"],
+      "enabled": false
+    }
+  ]
+}
