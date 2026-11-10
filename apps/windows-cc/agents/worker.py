@@ -340,6 +340,9 @@ class AgentHub:
         # Saved loop state while an R3 request waits, so the agent resumes after approval.
         self._halted: dict[str, dict] = {}
         self._mcp_maps: dict[str, dict] = {r["id"]: {} for r in ROLES}
+        self._folder = {r["id"]: "" for r in ROLES}
+        # Tests inject a fake: callable(root, providers, progress, on_provider) -> video_studio Deps.
+        self.video_deps = None
 
     # ---- R3 plumbing ----
 
@@ -428,7 +431,8 @@ class AgentHub:
                     "provider": self._provider[rid],
                     "notice": self._notice[rid],
                     "files": list(self._files[rid]),
-                    "workspace": str(self.root / "workspace") if "write_file" in r["tools"] else "",
+                    "workspace": str(self.root / "workspace") if ("write_file" in r["tools"] or r.get("pipeline")) else "",
+                    "folder": self._folder[rid],
                 }
             )
         return out
@@ -448,6 +452,7 @@ class AgentHub:
             self._halted.pop(role_id, None)
             self._pending_shell_cwd.pop(role_id, None)
             self._files[role_id] = []
+            self._folder[role_id] = ""
             self._notice[role_id] = ""
             self._provider[role_id] = ""
             self._detail[role_id] = "starting"
@@ -561,6 +566,10 @@ class AgentHub:
             self._emit(role_id, "error")
             return
 
+        if role.get("pipeline") == "video":
+            self._run_video(role_id, providers)
+            return
+
         tools = AgentTools(self.root, actor=f"agent-{role_id}")
         allowed = set(role["tools"])
         declarations = _declarations_for(allowed)
@@ -647,6 +656,56 @@ class AgentHub:
             self._detail[role_id] = str(e)[:200]
             self._last_reply[role_id] = f"error: {e}"[:500]
             self._emit(role_id, "error")
+
+    def _run_video(self, role_id: str, providers: list) -> None:
+        """Deterministic Video Studio pipeline (no tool loop); progress goes to the agent card."""
+        from video_studio.pipeline import Cancelled, default_deps, run_job
+
+        def progress(msg: str, replace: bool = False) -> None:
+            msg = str(msg)[:160]
+            steps = self._steps[role_id]
+            if replace and steps and steps[-1].startswith(("rendering ", "downloading ffmpeg")):
+                steps[-1] = msg
+            else:
+                steps.append(msg)
+            self._detail[role_id] = msg[:80]
+            if not replace and msg[:2] in ("1/", "2/", "3/", "4/", "5/"):
+                self._emit(role_id, "progress")
+
+        def on_provider(name: str) -> None:
+            if name and self._provider[role_id] != name:
+                self._provider[role_id] = name
+                self._steps[role_id].append(f"provider: {PROVIDER_LABEL.get(name, name)}")
+
+        try:
+            factory = self.video_deps or default_deps
+            deps = factory(self.root, providers, progress=progress, on_provider=on_provider)
+            res = run_job(self.root, self._goals[role_id], deps, progress=progress,
+                          should_stop=self._stop[role_id].is_set)
+        except Cancelled:
+            self._detail[role_id] = "stopped"
+            self._state[role_id] = "standby"
+            self._last_reply[role_id] = "Video stopped before it finished."
+            return
+        except Exception as e:  # noqa: BLE001
+            self._state[role_id] = "error"
+            self._detail[role_id] = f"video failed: {e}"[:200]
+            self._last_reply[role_id] = f"video failed: {e}"[:500]
+            self._emit(role_id, "error")
+            return
+        for f in res.get("files") or []:
+            self.note_file(role_id, f)
+        self._folder[role_id] = res["folder"]
+        mins = res["timings"]["total"] / 60
+        self._last_reply[role_id] = (
+            f"Video ready: \"{res['title']}\" — {res['duration']:.0f} seconds, {res['scenes']} scenes, "
+            f"made in {mins:.1f} minutes. Topic: {res['topic']}. Saved in workspace/{res['rel']}. "
+            "Not uploaded; review it first."
+        )[:2000]
+        self._steps[role_id].append("final")
+        self._detail[role_id] = "done"
+        self._state[role_id] = "standby"
+        self._emit(role_id, "done")
 
     def _exec_tool(self, role_id, tools, allowed, name, args):
         if name not in allowed:

@@ -148,6 +148,9 @@ class BridgeApi:
                 cc_settings.audit(self.root, f"agent-{role_id}", "agent_done",
                                   f"{summary[:200]}{extra} [{prov}]")
                 say = f"{name} finished. " + (f"Created {len(files)} file{'s' if len(files) != 1 else ''}. " if files else "") + _speakable(summary)
+            elif kind == "progress":
+                cc_settings.audit(self.root, f"agent-{role_id}", "agent_progress", str(row.get("detail") or "")[:200])
+                return
             elif kind == "needs_approval":
                 label = (row.get("pending") or {}).get("label") or str(row.get("detail") or "")[:120]
                 cc_settings.audit(self.root, f"agent-{role_id}", "agent_needs_approval", label)
@@ -222,6 +225,20 @@ class BridgeApi:
     def agent_start(self, role_id: str, goal: str = "") -> dict:
         try:
             return self._agents_hub().start(str(role_id), goal=str(goal or ""))
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def open_folder(self, path: str = "") -> dict:
+        """Open a folder inside jarvis/workspace in Explorer (nothing outside the workspace)."""
+        try:
+            ws = (self.root / "workspace").resolve()
+            p = Path(str(path or "")).resolve()
+            if not (p == ws or ws in p.parents) or not p.is_dir():
+                return {"ok": False, "error": "only folders inside the Jarvis workspace can be opened"}
+            import os
+
+            os.startfile(str(p))  # type: ignore[attr-defined]
+            return {"ok": True, "data": {"path": str(p)}}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 

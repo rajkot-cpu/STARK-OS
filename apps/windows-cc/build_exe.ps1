@@ -31,6 +31,7 @@ python -m PyInstaller --noconfirm --clean --onefile --windowed --name Jarvis `
   --hidden-import win32com.client --hidden-import pythoncom `
   --hidden-import cc_settings --hidden-import tts --hidden-import wakeword --hidden-import mcp_client `
   --hidden-import web_search --hidden-import screen --hidden-import winsound `
+  --collect-submodules video_studio --hidden-import numpy --hidden-import PIL.ImageDraw --hidden-import PIL.ImageFilter --hidden-import wave `
   --hidden-import openwakeword --hidden-import openwakeword.model --hidden-import openwakeword.utils `
   --hidden-import openwakeword.vad --collect-data openwakeword `
   --exclude-module scipy --exclude-module sklearn --exclude-module torch --exclude-module tflite_runtime `
