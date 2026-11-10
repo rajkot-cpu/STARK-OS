@@ -11,6 +11,7 @@ for p in (_PANEL, _WIN, Path(__file__).resolve().parent):
         sys.path.insert(0, str(p))
 
 import panel_api  # noqa: E402
+import threading  # noqa: E402
 
 
 def _system_status(status: dict) -> str:
@@ -26,6 +27,9 @@ class BridgeApi:
         self.root = Path(root)
         self.panel = panel_api.Panel(self.root)
         self._hub = None
+        self._wake = None
+        self._wake_busy = threading.Lock()
+        self._wake_info = {"state": "idle", "heard": "", "reply": "", "error": "", "engine": ""}
 
     def status(self) -> dict:
         try:
@@ -154,12 +158,35 @@ class BridgeApi:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    def _voice_id(self) -> str:
+        try:
+            from cc_settings import load
+
+            return load(self.root)["voice"]
+        except Exception:
+            return "en-IN-PrabhatNeural"
+
     def speak(self, text: str = "") -> dict:
         try:
-            import voice
+            import tts
 
-            voice.speak(str(text or ""))
+            tts.speak(str(text or ""), self._voice_id())
             return {"ok": True, "data": {"spoken": True}}
+        except Exception as e:
+            try:
+                import voice
+
+                voice.speak(str(text or ""))
+                return {"ok": True, "data": {"spoken": True, "engine": "voice"}}
+            except Exception:
+                return {"ok": False, "error": str(e)}
+
+    def stop_speaking(self) -> dict:
+        """Stop control / barge-in: interrupt whatever Jarvis is saying."""
+        try:
+            import tts
+
+            return {"ok": True, "data": {"was_speaking": bool(tts.stop())}}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -216,14 +243,19 @@ class BridgeApi:
             from stt import listen_once
             import voice
 
-            heard = listen_once(timeout=float(timeout))
+            heard = listen_once(timeout=float(timeout), root=self.root)
             if not heard.get("ok"):
                 return heard
             text = heard.get("text") or ""
             try:
-                voice.speak("Yes sir.", wait=False)
+                import tts
+
+                tts.speak("Yes sir.", self._voice_id())
             except Exception:
-                pass
+                try:
+                    voice.speak("Yes sir.", wait=False)
+                except Exception:
+                    pass
             from chat import reply
 
             ans = reply(text, root=self.root)
@@ -233,6 +265,7 @@ class BridgeApi:
                 "ok": True,
                 "text": text,
                 "reply": ans["data"]["reply"],
+                "engine": heard.get("engine", ""),
             }
         except Exception as e:
             return {"ok": False, "error": str(e)}
@@ -255,5 +288,260 @@ class BridgeApi:
                     }
                 )
             return {"ok": True, "data": {"skills": rows}}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # ---- Settings / opt-in features (wake word, STT, voice, MCP, screen) ----
+
+    def _wake_view(self) -> dict:
+        try:
+            from wakeword import available
+
+            ok, why = available()
+        except Exception as e:
+            ok, why = False, type(e).__name__
+        w = self._wake
+        return {
+            "available": ok,
+            "reason": why,
+            "running": bool(w and w.running),
+            "listener_state": (w.state if w else "off"),
+            "listener_error": (w.error if w else ""),
+            "wakes": (w.wakes if w else 0),
+            "barge_ins": (w.barge_ins if w else 0),
+            **self._wake_info,
+        }
+
+    def settings_get(self) -> dict:
+        try:
+            import cc_settings
+            import mcp_client
+            import stt
+            import tts
+
+            s = cc_settings.load(self.root)
+            try:
+                from screen import available as scr_avail
+
+                scr_ok, scr_why = scr_avail()
+            except Exception as e:
+                scr_ok, scr_why = False, type(e).__name__
+            return {"ok": True, "data": {
+                "settings": s,
+                "voices": [dict(v) for v in cc_settings.VOICES],
+                "stt_engines": [dict(e) for e in cc_settings.STT_ENGINES],
+                "whisper": stt.whisper_status(self.root, s["whisper_model"]),
+                "wake": self._wake_view(),
+                "edge_available": tts.edge_available(),
+                "speaking": tts.is_speaking(),
+                "mcp": mcp_client.public_view(self.root),
+                "screen": {"available": scr_ok, "reason": scr_why},
+                "settings_path": str(cc_settings.settings_path(self.root)),
+            }}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def settings_set(self, updates: dict | None = None, confirmed: bool = False) -> dict:
+        """Change settings. Turning the wake word ON is R3 (UI confirm card)."""
+        try:
+            import cc_settings
+
+            updates = dict(updates or {})
+            cur = cc_settings.load(self.root)
+            want_wake = updates.pop("wake_word", None)
+            if want_wake is True and not cur["wake_word"]:
+                if confirmed is not True:
+                    return {"ok": False, "error": "R3 confirmation required to keep the mic listening"}
+                r = self._wake_start()
+                if not r.get("ok"):
+                    return r
+                cc_settings.save(self.root, {"wake_word": True})
+                cc_settings.audit(self.root, "cc-settings", "wake_word_on",
+                                  "Always listen for Hey Jarvis enabled (R3 confirmed)",
+                                  "Settings > untick Always listen for Hey Jarvis")
+            elif want_wake is False and cur["wake_word"]:
+                self._wake_stop()
+                cc_settings.save(self.root, {"wake_word": False})
+                cc_settings.audit(self.root, "cc-settings", "wake_word_off",
+                                  "Always listen for Hey Jarvis disabled", "re-enable in Settings")
+            if updates:
+                before = cc_settings.load(self.root)
+                after = cc_settings.save(self.root, updates)
+                changed = {k: after[k] for k in updates if k in after and before.get(k) != after[k]}
+                if changed:
+                    cc_settings.audit(self.root, "cc-settings", "settings_change",
+                                      ", ".join(f"{k}={v}" for k, v in changed.items()))
+            return self.settings_get()
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def _wake_start(self) -> dict:
+        from wakeword import WakeListener, available
+
+        ok, why = available()
+        if not ok:
+            return {"ok": False, "error": why or "wake word unavailable"}
+        if self._wake and self._wake.running:
+            return {"ok": True}
+        import tts
+
+        self._wake = WakeListener(self._on_wake, is_speaking=tts.is_speaking, stop_speaking=tts.stop)
+        self._wake.start()
+        return {"ok": True}
+
+    def _wake_stop(self) -> None:
+        w, self._wake = self._wake, None
+        if w:
+            w.stop()
+        self._wake_info["state"] = "idle"
+
+    def _on_wake(self) -> None:
+        """Hey Jarvis heard: run one voice turn (listen -> chat -> speak)."""
+        if not self._wake_busy.acquire(blocking=False):
+            return
+        try:
+            self._wake_info.update(state="listening", error="")
+            try:
+                import winsound
+
+                winsound.MessageBeep()
+            except Exception:
+                pass
+            from stt import listen_once
+
+            w = self._wake
+            if w:
+                w.pause()
+            try:
+                heard = listen_once(timeout=6.0, root=self.root)
+            finally:
+                if w:
+                    w.resume()
+            if not heard.get("ok"):
+                self._wake_info.update(state="idle", error=heard.get("error") or "not heard")
+                return
+            text = heard.get("text") or ""
+            self._wake_info.update(state="thinking", heard=text, engine=heard.get("engine", ""))
+            from chat import reply
+
+            ans = reply(text, root=self.root)
+            if not ans.get("ok"):
+                self._wake_info.update(state="idle", error=ans.get("error") or "chat failed")
+                return
+            out = ans["data"]["reply"]
+            self._wake_info.update(state="speaking", reply=out)
+            import tts
+
+            tts.speak(out, self._voice_id(), wait=True)
+            self._wake_info["state"] = "idle"
+        except Exception as e:
+            self._wake_info.update(state="idle", error=str(e)[:200])
+        finally:
+            self._wake_busy.release()
+
+    def wake_status(self) -> dict:
+        try:
+            return {"ok": True, "data": self._wake_view()}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def autostart(self) -> dict:
+        """At launch: resume the wake word only if the operator enabled it earlier."""
+        try:
+            import cc_settings
+
+            if cc_settings.load(self.root)["wake_word"]:
+                return self._wake_start()
+            return {"ok": True, "data": {"wake": "off"}}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def shutdown(self) -> None:
+        try:
+            self._wake_stop()
+        except Exception:
+            pass
+        try:
+            import tts
+
+            tts.stop()
+        except Exception:
+            pass
+
+    def stt_download_model(self) -> dict:
+        try:
+            import cc_settings
+            import stt
+
+            name = cc_settings.load(self.root)["whisper_model"]
+            r = stt.download_model(self.root, name, background=True)
+            cc_settings.audit(self.root, "cc-settings", "whisper_download",
+                              f"{name} -> {stt.models_dir(self.root)}", "delete the models folder")
+            return r
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def tts_test(self) -> dict:
+        return self.speak("Good day, sir. This is my new voice.")
+
+    def _keys(self) -> tuple[str, str]:
+        from llm_providers import _resolve_key, load_secrets
+
+        load_secrets(self.root)
+        return (
+            _resolve_key("JARVIS_GEMINI_API_KEY", ("GEMINI_API_KEY", "GOOGLE_API_KEY")),
+            _resolve_key("JARVIS_OPENAI_API_KEY", ("OPENAI_API_KEY",)),
+        )
+
+    def screen_read(self, question: str = "", confirmed: bool = False) -> dict:
+        """Operator-initiated screen read. R3 every capture (UI confirm card)."""
+        if confirmed is not True:
+            return {"ok": False, "error": "R3 confirmation required for every screen capture"}
+        try:
+            import cc_settings
+            from screen import read_screen
+
+            g, o = self._keys()
+            r = read_screen(str(question or ""), gemini_key=g, openai_key=o)
+            cc_settings.audit(self.root, "cc-screen", "screen_capture",
+                              f"operator R3; ok={bool(r.get('ok'))}; image kept in memory only",
+                              "n/a (nothing stored)")
+            return r
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def tool_confirm(self, role_id: str = "", token: str = "") -> dict:
+        """Run an agent's pending R3 tool request (MCP call or screen read)."""
+        try:
+            import cc_settings
+
+            rid = str(role_id or "").strip()
+            hub = self._agents_hub()
+            pend = hub.take_pending(rid, str(token or ""))
+            if not pend:
+                return {"ok": False, "error": "no matching pending R3 tool request"}
+            if pend["kind"] == "mcp":
+                from mcp_client import call_tool
+
+                r = call_tool(self.root, pend["server"], pend["tool"], pend.get("args") or {})
+                cc_settings.audit(self.root, f"agent-{rid}", "mcp_call",
+                                  f"{pend['server']}.{pend['tool']} ok={bool(r.get('ok'))} (R3 confirmed)",
+                                  "depends on the MCP tool")
+                text = (r.get("data") or {}).get("text") if r.get("ok") else r.get("error")
+                hub.record_result(rid, f"{pend['label']}: {text or ''}")
+                return r
+            if pend["kind"] == "screen":
+                r = self.screen_read(pend.get("question") or "", confirmed=True)
+                desc = (r.get("data") or {}).get("description") if r.get("ok") else r.get("error")
+                hub.record_result(rid, f"Screen: {desc or ''}")
+                return r
+            return {"ok": False, "error": "unknown pending kind"}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def tool_reject(self, role_id: str = "") -> dict:
+        try:
+            ok = self._agents_hub().reject_pending(str(role_id or ""))
+            return {"ok": ok} if ok else {"ok": False, "error": "nothing pending"}
         except Exception as e:
             return {"ok": False, "error": str(e)}

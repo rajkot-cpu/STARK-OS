@@ -93,6 +93,31 @@ TOOL_SCHEMAS = [
 ]
 
 
+TOOL_SCHEMAS += [
+    {
+        "name": "web_search",
+        "description": "Search the public web (read-only). Returns titles, URLs and snippets to summarize; cite URLs.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "max_results": {"type": "integer"},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "screen_read",
+        "description": "Ask the operator to let Jarvis capture and describe the current screen once. Needs operator R3 approval every time.",
+        "parameters": {
+            "type": "object",
+            "properties": {"question": {"type": "string"}},
+            "required": [],
+        },
+    },
+]
+
+
 class AgentTools:
     def __init__(self, root: Path):
         self.root = Path(root).resolve()
@@ -150,6 +175,17 @@ class AgentTools:
             }
         except Exception as e:
             return {"ok": False, "error": str(e)}
+
+    def web_search(self, query: str, max_results: int = 5) -> dict:
+        try:
+            from llm_providers import _resolve_key, load_secrets
+            from web_search import search
+
+            load_secrets(self.root)
+            key = _resolve_key("JARVIS_GEMINI_API_KEY", ("GEMINI_API_KEY", "GOOGLE_API_KEY"))
+            return search(query, max_results=max_results, gemini_key=key)
+        except Exception as e:
+            return {"ok": False, "error": f"web_search: {type(e).__name__}"}
 
     def skills_list(self) -> dict:
         skills = self.root / "skills"
@@ -281,6 +317,12 @@ class AgentTools:
             return self.code_search(args["query"], args.get("max_hits") or 20)
         if name == "memory_note":
             return self.memory_note(args["text"])
+        if name == "web_search":
+            return self.web_search(args.get("query") or "", args.get("max_results") or 5)
+        if name == "screen_read":
+            # Every capture is R3: only BridgeApi.tool_confirm may run it.
+            return {"ok": False, "needs_r3": True, "kind": "screen",
+                    "question": str(args.get("question") or "")[:300]}
         if name == "shell":
             # Never honour model-supplied `confirmed`; only BridgeApi.shell_confirm may.
             return self.shell(args["cmd"], confirmed=False)

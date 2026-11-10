@@ -55,7 +55,14 @@ def main():
         width=1440,
         height=900,
     )
-    webview.start(http_server=True, debug=False)
+    try:
+        api.autostart()  # wake word only if the operator enabled it earlier
+    except Exception:
+        pass
+    try:
+        webview.start(http_server=True, debug=False)
+    finally:
+        api.shutdown()
 
 
 if __name__ == "__main__":
