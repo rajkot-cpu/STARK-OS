@@ -9,6 +9,37 @@ let agentsOrbit = null;
 let selectedAgent = null;
 let lastAgentsList = [];
 
+// ---- Voice state for the AI Core (listening while recording, speaking while TTS plays) ----
+const voice = { listening: false, speakingUntil: 0, speakStarted: 0, ttsFlag: false, wake: "idle", shown: "" };
+function markSpeaking(text) {
+  const now = Date.now();
+  voice.speakStarted = now;
+  voice.speakingUntil = now + Math.min(14000, 900 + String(text || "").length * 55);
+}
+function voiceNow() {
+  if (voice.listening || voice.wake === "listening" || voice.wake === "thinking") return "listening";
+  if (voice.ttsFlag || voice.wake === "speaking" || Date.now() < voice.speakingUntil) return "speaking";
+  return "idle";
+}
+function pushVoice() {
+  const st = voiceNow();
+  if (st === voice.shown) return;
+  voice.shown = st;
+  if (core3d && core3d.setVoice) core3d.setVoice(st);
+  if (agentsOrbit && agentsOrbit.setVoice) agentsOrbit.setVoice(st);
+  const el = document.getElementById("hud-voice");
+  if (el) {
+    el.textContent = st.toUpperCase();
+    el.parentElement.classList.toggle("voice-listening", st === "listening");
+    el.parentElement.classList.toggle("voice-speaking", st === "speaking");
+  }
+}
+async function speak(text) {
+  markSpeaking(text);
+  pushVoice();
+  return call("speak", text);
+}
+
 const $ = (id) => document.getElementById(id);
 const banner = (msg) => { $("banner").textContent = msg || ""; };
 
@@ -76,6 +107,20 @@ function renderReadiness(data) {
       : "";
   }
   if (core3d) core3d.setHealth(pct / 100);
+  if (agentsOrbit) agentsOrbit.setHealth(pct / 100);
+  const arc = $("hud-ready-arc");
+  if (arc) {
+    arc.setAttribute("stroke-dasharray", `${pct} 100`);
+    arc.classList.toggle("mid", pct >= 50 && pct < 80);
+    arc.classList.toggle("low", pct < 50);
+  }
+  if ($("hud-ready")) $("hud-ready").textContent = `${pct}%`;
+  const bar = $("hud-ready-bar");
+  if (bar) {
+    bar.style.width = `${pct}%`;
+    const col = pct >= 80 ? "var(--ok)" : (pct >= 50 ? "var(--gold)" : "var(--danger)");
+    bar.style.background = col; bar.style.boxShadow = `0 0 6px ${col}`;
+  }
   const core = $("core-page");
   if (core) {
     const missing = (data?.checks || []).filter((c) => !c.ok);
@@ -133,6 +178,8 @@ function selectAgent(id, route) {
 
 function renderAgents(agents) {
   lastAgentsList = agents || [];
+  const busy = lastAgentsList.filter((a) => a.state === "active").length;
+  if ($("hud-agents")) $("hud-agents").textContent = `${busy} / ${lastAgentsList.length}`;
   if (agentsOrbit) agentsOrbit.update(lastAgentsList);
   if (core3d && core3d.update) core3d.update(lastAgentsList);
   renderOrbitDetail();
@@ -251,7 +298,7 @@ async function runCommand(text) {
   if (!r.ok) { banner(r.error || "command failed"); uiLog("warn", `command ${JSON.stringify(t)} failed: ${r.error}`, "cmd-bar"); return; }
   const d = r.data || {};
   banner(d.reply || "");
-  if (d.reply) call("speak", d.reply);
+  if (d.reply) speak(d.reply);
   if (d.routed === "agent" && d.started) { lastAgentsKey = ""; await refresh(); }
 }
 
@@ -286,6 +333,8 @@ function renderMemory(mem) {
 }
 
 function renderLlms(providers) {
+  const live = (providers || []).find((p) => p.state === "connected");
+  if ($("hud-provider")) $("hud-provider").textContent = live ? String(live.name).toUpperCase() : "OFFLINE";
   $("llm-grid").innerHTML = (providers || []).map((p) => `
     <div class="llm ${p.state}">
       <span>${p.name}</span>
@@ -386,7 +435,7 @@ async function screenFlow() {
   if ($("set-screen-out")) $("set-screen-out").textContent = out;
   if (r.ok) {
     $("voice-state").textContent = "Screen described";
-    await call("speak", out.slice(0, 400));
+    await speak(out.slice(0, 400));
   }
 }
 
@@ -402,7 +451,14 @@ async function refresh() {
     call("readiness"),
     call("settings_get"),
   ]);
-  if (sets && sets.ok) renderSettings(sets.data);
+  if (sets && sets.ok) {
+    renderSettings(sets.data);
+    voice.ttsFlag = !!sets.data.speaking;
+    voice.wake = (sets.data.settings && sets.data.settings.wake_word && sets.data.wake && sets.data.wake.state) || "idle";
+    if (!voice.ttsFlag && Date.now() - voice.speakStarted > 2500) voice.speakingUntil = 0;
+    pushVoice();
+  }
+  if (st.ok && $("hud-sys")) $("hud-sys").textContent = String(st.data.system_status || "ONLINE").toUpperCase();
   if (st.ok) renderHealth(st.data, agents.ok ? agents.data.agents : [], llms.ok ? llms.data.providers : [], mem.ok ? mem.data : null);
   else banner(st.error || "status offline");
   if (ready && ready.ok) renderReadiness(ready.data);
@@ -422,7 +478,10 @@ async function refresh() {
 async function listenFlow() {
   $("voice-state").textContent = "Listening…";
   banner("");
-  const r = await call("voice_turn", 6);
+  voice.listening = true;
+  pushVoice();
+  let r;
+  try { r = await call("voice_turn", 6); } finally { voice.listening = false; pushVoice(); }
   if (!r.ok) {
     banner(r.error || "Could not hear you");
     $("voice-state").textContent = "Voice idle";
@@ -431,7 +490,7 @@ async function listenFlow() {
   $("voice-state").textContent = `Heard: ${r.text}`;
   banner(r.reply || "");
   if (r.routed === "agent") { lastAgentsKey = ""; refresh(); }
-  if (r.reply) await call("speak", r.reply);
+  if (r.reply) await speak(r.reply);
   $("voice-state").textContent = r.engine === "whisper" ? "Voice idle · offline STT" : "Voice idle";
 }
 
@@ -550,7 +609,8 @@ async function boot() {
   try { mountNavIcons($("nav")); } catch (e) { uiLog("error", `nav icons: ${e && e.stack ? e.stack : e}`, "boot"); }
   // Home AI Core: agents orbit it as 3D nodes (falls back to the plain core, then to a message).
   try {
-    core3d = mountAgentOrbit($("sphere"), { compact: true, onSelect: (id) => selectAgent(id, true),
+    core3d = mountAgentOrbit($("sphere"), { host: $("core-stage"), labels: $("home-orbit-labels"),
+      onSelect: (id) => selectAgent(id, true),
       onLost: () => glFallback($("sphere"), "AI Core") });
     if (!core3d.ok) core3d = mountCore($("sphere"));
     if (core3d && core3d.ok === false) glFallback($("sphere"), "AI Core");
@@ -560,7 +620,7 @@ async function boot() {
     core3d = null;
   }
   try {
-    agentsOrbit = mountAgentOrbit($("agents-orbit"), { fluid: true, labels: $("orbit-labels"),
+    agentsOrbit = mountAgentOrbit($("agents-orbit"), { labels: $("orbit-labels"),
       onSelect: (id) => selectAgent(id, false), onLost: () => glFallback($("agents-orbit"), "agent orbit") });
     if (!agentsOrbit.ok) { glFallback($("agents-orbit"), "agent orbit"); agentsOrbit = null; }
   } catch (e) {
@@ -569,6 +629,7 @@ async function boot() {
     agentsOrbit = null;
   }
   wire();
+  setInterval(pushVoice, 250);
   tickClock();
   setInterval(tickClock, 1000);
   const ok = await whenReady(15000);
