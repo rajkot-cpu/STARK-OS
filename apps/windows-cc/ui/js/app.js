@@ -2,8 +2,12 @@
 import { call, uiLog, whenReady } from "./bridge.js";
 import { mountNavIcons } from "./icons3d.js";
 import { mountCore } from "./core3d.js";
+import { mountAgentOrbit } from "./orbit3d.js";
 
 let core3d = null;
+let agentsOrbit = null;
+let selectedAgent = null;
+let lastAgentsList = [];
 
 const $ = (id) => document.getElementById(id);
 const banner = (msg) => { $("banner").textContent = msg || ""; };
@@ -95,7 +99,43 @@ function esc(v) {
 const goalDrafts = {};
 let lastAgentsKey = "";
 
+function renderOrbitDetail() {
+  const el = $("orbit-detail");
+  if (!el) return;
+  const a = (lastAgentsList || []).find((x) => x.id === selectedAgent);
+  if (!a) {
+    el.innerHTML = `<div class="muted">Click an agent node to see its recent steps.</div>`;
+    return;
+  }
+  const steps = (a.steps || []).slice(-12).map((s) => `<li>${esc(s)}</li>`).join("");
+  const det = String(a.detail || "");
+  el.innerHTML = `
+    <h3>${esc(a.name)} <span class="state-${esc(a.state)}">${esc(a.state)}</span></h3>
+    ${a.goal ? `<div class="agent-goal-shown">Goal: ${esc(a.goal.slice(0, 200))}</div>` : `<div class="muted small">No goal yet.</div>`}
+    ${det ? `<div class="${a.state === "error" ? "agent-err" : "muted small"}">${esc(det.slice(0, 240))}</div>` : ""}
+    ${a.pending ? `<div class="gold small">${esc(a.pending.label)} — waiting for your approval (see its card below)</div>` : ""}
+    ${steps ? `<div class="muted small">Recent steps</div><ul class="agent-steps">${steps}</ul>` : `<div class="muted small">No steps yet.</div>`}
+    <button class="small" id="orbit-goto">Show card</button>`;
+  const b = $("orbit-goto");
+  if (b) b.onclick = () => {
+    const card = document.querySelector(`#agents-page [data-card-for="${a.id}"]`);
+    if (card) card.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+}
+
+function selectAgent(id, route) {
+  selectedAgent = id;
+  if (agentsOrbit) agentsOrbit.select(id);
+  if (route) setRoute("agents");
+  document.querySelectorAll("[data-card-for]").forEach((c) => c.classList.toggle("selected", c.dataset.cardFor === id));
+  renderOrbitDetail();
+}
+
 function renderAgents(agents) {
+  lastAgentsList = agents || [];
+  if (agentsOrbit) agentsOrbit.update(lastAgentsList);
+  if (core3d && core3d.update) core3d.update(lastAgentsList);
+  renderOrbitDetail();
   // Keep any goal the operator is typing across the 3s refresh.
   document.querySelectorAll("[data-goal-for]").forEach((el) => { goalDrafts[el.dataset.goalFor] = el.value; });
   const focused = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.goalFor : null;
@@ -113,7 +153,7 @@ function renderAgents(agents) {
     const files = (a.files || []).map((f) => `<li>${esc(f)}</li>`).join("");
     const isErr = a.state === "error";
     return `
-    <div class="agent-card">
+    <div class="agent-card${a.id === selectedAgent ? " selected" : ""}" data-card-for="${a.id}">
       <div>
         <div>${esc(a.name)}</div>
         <div class="state-${a.state}">${esc(a.state)}${a.detail && !isErr ? " · " + esc(det.slice(0, 80)) : ""}</div>
@@ -496,7 +536,10 @@ async function loadSkills() {
 
 async function boot() {
   mountNavIcons($("nav"));
-  core3d = mountCore($("sphere"));
+  // Home AI Core: agents orbit it as 3D nodes (falls back to the plain core without WebGL).
+  core3d = mountAgentOrbit($("sphere"), { compact: true, onSelect: (id) => selectAgent(id, true) });
+  if (!core3d.ok) core3d = mountCore($("sphere"));
+  agentsOrbit = mountAgentOrbit($("agents-orbit"), { labels: $("orbit-labels"), onSelect: (id) => selectAgent(id, false) });
   wire();
   tickClock();
   setInterval(tickClock, 1000);
