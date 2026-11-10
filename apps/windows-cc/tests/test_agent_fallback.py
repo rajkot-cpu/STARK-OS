@@ -38,6 +38,27 @@ class FallbackTests(unittest.TestCase):
     def setUp(self):
         self.td = tempfile.TemporaryDirectory()
         self.root = Path(self.td.name)
+        self._sl = mock.patch.object(w, "_sleep")
+        self.sleep = self._sl.start()
+        self.addCleanup(self._sl.stop)
+
+    def test_rate_limit_retries_same_provider_first(self):
+        g = mock.Mock(side_effect=[w.ProviderUnavailable("gemini", 429, '{"retryDelay": "7s"}'), _g_final("ok")])
+        with mock.patch.object(w, "_gemini_turn", g):
+            hub = AgentHub(root=self.root, gemini_key="g", keys={"openai": "o"})
+            hub._run("memory")
+        r = row(hub, "memory")
+        self.assertEqual((r["last_reply"], r["provider"]), ("ok", "gemini"))
+        self.sleep.assert_called_once_with(7.0)
+
+    def test_out_of_credits_does_not_retry(self):
+        g = mock.Mock(side_effect=w.ProviderUnavailable("gemini", 429, "insufficient_quota"))
+        o = mock.Mock(return_value=_oa_final("fine"))
+        with mock.patch.object(w, "_gemini_turn", g), mock.patch.object(w, "_openai_turn", o):
+            hub = AgentHub(root=self.root, gemini_key="g", keys={"openai": "o"})
+            hub._run("memory")
+        self.assertEqual(g.call_count, 1)
+        self.sleep.assert_not_called()
 
     def tearDown(self):
         self.td.cleanup()
@@ -54,8 +75,8 @@ class FallbackTests(unittest.TestCase):
         self.assertEqual(r["provider"], "openai")
         self.assertIn("Gemini quota exceeded (429) — using OpenAI", r["notice"])
         self.assertIn("provider: OpenAI", r["steps"])
-        # Fallback sticks for the rest of the run (Gemini called once).
-        self.assertEqual(g.call_count, 1)
+        # Retries Gemini (rate limit) then falls back and sticks with OpenAI.
+        self.assertEqual(g.call_count, 1 + w.RETRIES)
 
     def test_all_providers_fail_reports_reasons(self):
         g = mock.Mock(side_effect=w.ProviderUnavailable("gemini", 429, ""))

@@ -115,9 +115,9 @@ def _gemini_turn(
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
-        err = e.read().decode("utf-8", errors="replace")[:300]
+        err = e.read().decode("utf-8", errors="replace")[:3000]
         if e.code == 400:
-            raise ToolsRejected(f"Gemini HTTP {e.code}: {err}") from e
+            raise ToolsRejected(f"Gemini HTTP {e.code}: {err[:300]}") from e
         raise ProviderUnavailable("gemini", e.code, err) from e
     except (urllib.error.URLError, TimeoutError, OSError) as e:
         raise ProviderUnavailable("gemini", None, type(e).__name__) from e
@@ -134,6 +134,7 @@ class ProviderUnavailable(RuntimeError):
         self.provider = provider
         self.code = code
         self.reason = _reason(provider, code, body)
+        self.retry_after = _retry_after(body)
         super().__init__(self.reason)
 
 
@@ -141,11 +142,28 @@ class AllProvidersFailed(RuntimeError):
     pass
 
 
+def _retry_after(body: str) -> float | None:
+    import re
+
+    m = re.search(r'"retryDelay"\s*:\s*"([0-9.]+)s"', body or "")
+    return float(m.group(1)) if m else None
+
+
+RETRIES = 2          # per provider, for 429 rate limits and 5xx before falling back
+RETRY_CAP = 30.0     # seconds
+
+
+def _sleep(sec: float) -> None:
+    import time
+
+    time.sleep(sec)
+
+
 def _reason(provider: str, code: int | None, body: str) -> str:
     label = PROVIDER_LABEL.get(provider, provider)
     b = (body or "").lower()
     if code == 429:
-        if "insufficient_quota" in b or "credit" in b or "billing" in b:
+        if "insufficient_quota" in b or "credit" in b:
             return f"{label} out of credits (429)"
         return f"{label} quota exceeded (429)"
     if code in (401, 403):
@@ -184,7 +202,7 @@ def _openai_turn(system: str, messages: list, tools: list, key: str, *,
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
-        err = e.read().decode("utf-8", errors="replace")[:300]
+        err = e.read().decode("utf-8", errors="replace")[:3000]
         raise ProviderUnavailable(provider, e.code, err) from e
     except (urllib.error.URLError, TimeoutError, OSError) as e:
         raise ProviderUnavailable(provider, None, type(e).__name__) from e
@@ -491,6 +509,7 @@ class AgentHub:
 
     def _llm_turn(self, role_id, providers, idx, system, history, declarations):
         notes = []
+        attempt = 0
         while idx < len(providers):
             name, key = providers[idx]
             try:
@@ -503,6 +522,16 @@ class AgentHub:
                     self._steps[role_id].append(f"provider: {PROVIDER_LABEL.get(name, name)}")
                 return turn, idx
             except ProviderUnavailable as e:
+                transient = e.code == 429 or (e.code is not None and e.code >= 500)
+                out_of_credit = "out of credits" in e.reason
+                if transient and not out_of_credit and attempt < RETRIES and not self._stop[role_id].is_set():
+                    attempt += 1
+                    wait = min(e.retry_after or 5.0 * attempt, RETRY_CAP)
+                    self._steps[role_id].append(f"{e.reason} — retrying in {int(wait)}s")
+                    self._detail[role_id] = f"waiting {int(wait)}s ({e.reason})"
+                    _sleep(wait)
+                    continue
+                attempt = 0
                 notes.append(e.reason)
                 idx += 1
                 if idx < len(providers):
