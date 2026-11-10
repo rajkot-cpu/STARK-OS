@@ -19,3 +19,4 @@ __pycache__/
 *.pyc
 secrets/api_keys.env
 **/secrets/api_keys.env
+workspace/

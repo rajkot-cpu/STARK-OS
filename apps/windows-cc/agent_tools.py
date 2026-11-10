@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -118,9 +119,189 @@ TOOL_SCHEMAS += [
 ]
 
 
+TOOL_SCHEMAS += [
+    {
+        "name": "ws_list_dir",
+        "description": "List a folder inside the build workspace (jarvis/workspace). Path like 'my-app' or 'my-app/src'; empty = list projects.",
+        "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": []},
+    },
+    {
+        "name": "ws_read_file",
+        "description": "Read a text file inside the build workspace, e.g. 'my-app/index.html'.",
+        "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]},
+    },
+    {
+        "name": "write_file",
+        "description": (
+            "Create a NEW text file inside the build workspace. path = '<project>/<file>', e.g. "
+            "'test-site/index.html' (folders are created). Overwriting an existing file needs operator R3 approval."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}, "content": {"type": "string"}},
+            "required": ["path", "content"],
+        },
+    },
+    {
+        "name": "make_dir",
+        "description": "Create a folder inside the build workspace, e.g. 'my-app/src'.",
+        "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]},
+    },
+    {
+        "name": "delete_file",
+        "description": "Delete a file inside the build workspace. Always needs operator R3 approval.",
+        "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]},
+    },
+]
+for _s in TOOL_SCHEMAS:
+    if _s["name"] == "shell":
+        _s["parameters"]["properties"]["cwd"] = {
+            "type": "string",
+            "description": "Optional workspace project folder to run in, e.g. 'test-site'",
+        }
+
+WS_MAX_FILE = 512_000
+WS_MAX_PROJECT = 20_000_000
+_WS_BLOCK_EXT = {".exe", ".dll", ".scr", ".msi", ".lnk", ".sys", ".com", ".pif", ".cpl", ".url"}
+_WIN_RESERVED = {"con", "prn", "aux", "nul"} | {f"com{i}" for i in range(1, 10)} | {f"lpt{i}" for i in range(1, 10)}
+
+
 class AgentTools:
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, actor: str = "agent"):
         self.root = Path(root).resolve()
+        self.actor = actor or "agent"
+
+    # ---- build workspace (jarvis/workspace/<project>/...) ----
+
+    @property
+    def ws_root(self) -> Path:
+        return self.root / "workspace"
+
+    def ws_path(self, rel: str, *, allow_root: bool = False) -> Path:
+        """Resolve a workspace-relative path; raise ValueError if it escapes."""
+        raw = str(rel or "").strip().replace("\\", "/")
+        if not raw or raw in (".", "./"):
+            if allow_root:
+                return self.ws_root
+            raise ValueError("path required (e.g. 'my-app/index.html')")
+        if raw.startswith(("/", "~")) or re.match(r"^[A-Za-z]:", raw) or ":" in raw:
+            raise ValueError("absolute paths/drive letters are not allowed; use '<project>/<file>'")
+        parts = [p for p in raw.split("/") if p not in ("", ".")]
+        if any(p == ".." for p in parts):
+            raise ValueError("'..' is not allowed")
+        for p in parts:
+            if p.split(".")[0].lower() in _WIN_RESERVED or p.endswith((" ", ".")):
+                raise ValueError(f"invalid name: {p}")
+        ws = self.ws_root.resolve() if self.ws_root.exists() else self.ws_root
+        target = (self.ws_root / "/".join(parts)).resolve()
+        if target != ws and ws not in target.parents:
+            raise ValueError("path outside workspace")
+        if not allow_root and target == ws:
+            raise ValueError("path must be inside a project folder")
+        return target
+
+    def _ws_rel(self, p: Path) -> str:
+        try:
+            return p.relative_to(self.ws_root.resolve()).as_posix()
+        except ValueError:
+            return p.name
+
+    def _audit(self, action: str, result: str, undo: str = "") -> None:
+        try:
+            from cc_settings import audit
+
+            audit(self.root, self.actor, action, result, undo)
+        except Exception:
+            pass
+
+    def ws_list_dir(self, path: str = "") -> dict:
+        try:
+            self.ws_root.mkdir(parents=True, exist_ok=True)
+            d = self.ws_path(path, allow_root=True)
+            if not d.is_dir():
+                return {"ok": False, "error": "not a directory"}
+            entries = [
+                {"name": c.name, "is_dir": c.is_dir(), "bytes": (c.stat().st_size if c.is_file() else None)}
+                for c in sorted(d.iterdir())[:300]
+            ]
+            return {"ok": True, "data": {"path": self._ws_rel(d) or ".", "entries": entries}}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def ws_read_file(self, path: str, max_bytes: int = 100_000) -> dict:
+        try:
+            p = self.ws_path(path)
+            if not p.is_file():
+                return {"ok": False, "error": "not a file"}
+            return {"ok": True, "data": {"path": self._ws_rel(p),
+                                         "text": p.read_bytes()[:max_bytes].decode("utf-8", errors="replace")}}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def make_dir(self, path: str) -> dict:
+        try:
+            p = self.ws_path(path)
+            if p.exists() and not p.is_dir():
+                return {"ok": False, "error": "a file with that name exists"}
+            p.mkdir(parents=True, exist_ok=True)
+            self._audit("agent_make_dir", f"workspace/{self._ws_rel(p)}")
+            return {"ok": True, "data": {"path": self._ws_rel(p)}}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def _project_bytes(self, p: Path) -> int:
+        try:
+            proj = self.ws_root.resolve() / p.relative_to(self.ws_root.resolve()).parts[0]
+            return sum(f.stat().st_size for f in proj.rglob("*") if f.is_file())
+        except Exception:
+            return 0
+
+    def write_file(self, path: str, content: str, confirmed: bool = False) -> dict:
+        try:
+            p = self.ws_path(path)
+            rel = self._ws_rel(p)
+            if "/" not in rel:
+                return {"ok": False, "error": "put files inside a project folder: '<project>/<file>'"}
+            if p.suffix.lower() in _WS_BLOCK_EXT:
+                return {"ok": False, "error": f"file type {p.suffix} is not allowed"}
+            data = str(content if content is not None else "").encode("utf-8")
+            if len(data) > WS_MAX_FILE:
+                return {"ok": False, "error": f"file too large ({len(data)} bytes > {WS_MAX_FILE})"}
+            if p.is_dir():
+                return {"ok": False, "error": "a folder with that name exists"}
+            exists = p.exists()
+            if exists and not confirmed:
+                return {"ok": False, "needs_r3": True, "kind": "file", "op": "overwrite",
+                        "path": rel, "content": str(content or ""), "bytes": len(data)}
+            if self._project_bytes(p) + len(data) > WS_MAX_PROJECT:
+                return {"ok": False, "error": "project size limit reached (20 MB)"}
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(data)
+            self._audit("agent_write_file" if not exists else "agent_overwrite_file",
+                        f"workspace/{rel} ({len(data)} B){' R3 confirmed' if exists else ''}",
+                        f"delete workspace/{rel}" if not exists else "previous content not kept")
+            return {"ok": True, "data": {"path": rel, "abs_path": str(p), "bytes": len(data), "created": not exists}}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def delete_file(self, path: str, confirmed: bool = False) -> dict:
+        try:
+            p = self.ws_path(path)
+            rel = self._ws_rel(p)
+            if not p.exists():
+                return {"ok": False, "error": "not found"}
+            if p.is_dir() and any(p.iterdir()):
+                return {"ok": False, "error": "folder not empty"}
+            if not confirmed:
+                return {"ok": False, "needs_r3": True, "kind": "file", "op": "delete", "path": rel}
+            if p.is_dir():
+                p.rmdir()
+            else:
+                p.unlink()
+            self._audit("agent_delete_file", f"workspace/{rel} (R3 confirmed)", "not recoverable")
+            return {"ok": True, "data": {"path": rel, "deleted": True}}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
 
     def safe_path(self, rel_or_abs: str) -> Path:
         raw = Path(rel_or_abs)
@@ -262,11 +443,27 @@ class AgentTools:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    def shell(self, cmd: str, confirmed: bool = False) -> dict:
-        if not is_allowlisted(cmd) and not confirmed:
-            return {"ok": False, "needs_r3": True, "command": cmd}
+    def shell(self, cmd: str, confirmed: bool = False, cwd: str = "") -> dict:
+        run_dir = self.root
+        cwd = str(cwd or "").strip()
+        if cwd:
+            try:
+                run_dir = self.ws_path(cwd)
+            except ValueError as e:
+                return {"ok": False, "error": f"cwd: {e}"}
+            if not run_dir.is_dir():
+                return {"ok": False, "error": "cwd: project folder does not exist"}
         c = normalize(cmd)
         allow = is_allowlisted(cmd)
+        if allow and (cwd or "workspace" in c.lower()) and c.split(" ", 1)[0].lower() != "dir" \
+                and c.split(" ", 1)[0].lower() != "ls":
+            # Agent-written code in the workspace never runs without operator approval.
+            allow = False
+        if not allow and not confirmed:
+            out = {"ok": False, "needs_r3": True, "command": cmd}
+            if cwd:
+                out["cwd"] = cwd
+            return out
         head = c.split(" ", 1)[0].lower()
         try:
             if allow and head == "ls" and os.name == "nt":
@@ -284,7 +481,7 @@ class AgentTools:
                 # `dir` is a cmd builtin; confirmed commands run as typed (R3).
                 run_target, use_shell = c, True
             r = subprocess.run(
-                run_target, shell=use_shell, cwd=str(self.root), timeout=30,
+                run_target, shell=use_shell, cwd=str(run_dir), timeout=60,
                 capture_output=True, text=True,
             )
             return {
@@ -297,7 +494,7 @@ class AgentTools:
                 },
             }
         except subprocess.TimeoutExpired:
-            return {"ok": False, "error": "timeout after 30s", "command": cmd}
+            return {"ok": False, "error": "timeout after 60s", "command": cmd}
         except Exception as e:
             return {"ok": False, "error": str(e), "command": cmd}
 
@@ -325,5 +522,17 @@ class AgentTools:
                     "question": str(args.get("question") or "")[:300]}
         if name == "shell":
             # Never honour model-supplied `confirmed`; only BridgeApi.shell_confirm may.
-            return self.shell(args["cmd"], confirmed=False)
+            return self.shell(args.get("cmd") or args.get("command") or "", confirmed=False,
+                              cwd=str(args.get("cwd") or ""))
+        if name == "ws_list_dir":
+            return self.ws_list_dir(args.get("path") or "")
+        if name == "ws_read_file":
+            return self.ws_read_file(args.get("path") or "")
+        if name == "write_file":
+            # Never honour model-supplied `confirmed`; overwrite is R3 via BridgeApi.tool_confirm.
+            return self.write_file(args.get("path") or "", args.get("content") or "", confirmed=False)
+        if name == "make_dir":
+            return self.make_dir(args.get("path") or "")
+        if name == "delete_file":
+            return self.delete_file(args.get("path") or "", confirmed=False)
         return {"ok": False, "error": f"unknown tool {name}"}

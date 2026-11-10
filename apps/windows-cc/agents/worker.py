@@ -15,6 +15,10 @@ from .registry import ROLES
 
 MAX_STEPS = 12
 MODEL = "gemini-3.1-flash-lite-preview"
+OPENAI_MODEL = "gpt-4o-mini"
+GROQ_MODEL = "llama-3.3-70b-versatile"
+MAX_OUT_TOKENS = 4096
+PROVIDER_LABEL = {"gemini": "Gemini", "openai": "OpenAI", "groq": "Groq"}
 
 
 def _role(role_id: str) -> dict | None:
@@ -97,7 +101,7 @@ def _gemini_turn(
     body: dict = {
         "systemInstruction": {"parts": [{"text": system}]},
         "contents": contents,
-        "generationConfig": {"maxOutputTokens": 800, "temperature": 0.3},
+        "generationConfig": {"maxOutputTokens": MAX_OUT_TOKENS, "temperature": 0.3},
     }
     if declarations:
         body["tools"] = [{"functionDeclarations": declarations}]
@@ -111,14 +115,163 @@ def _gemini_turn(
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
-        err = e.read().decode("utf-8", errors="replace")[:200]
+        err = e.read().decode("utf-8", errors="replace")[:300]
         if e.code == 400:
             raise ToolsRejected(f"Gemini HTTP {e.code}: {err}") from e
-        raise RuntimeError(f"Gemini HTTP {e.code}: {err}") from e
+        raise ProviderUnavailable("gemini", e.code, err) from e
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        raise ProviderUnavailable("gemini", None, type(e).__name__) from e
 
 
 class ToolsRejected(RuntimeError):
     """API rejected the request (HTTP 400) — likely tools unsupported."""
+
+
+class ProviderUnavailable(RuntimeError):
+    """Provider can't serve this turn (quota, outage, auth, network) — try the next one."""
+
+    def __init__(self, provider: str, code: int | None, body: str = ""):
+        self.provider = provider
+        self.code = code
+        self.reason = _reason(provider, code, body)
+        super().__init__(self.reason)
+
+
+class AllProvidersFailed(RuntimeError):
+    pass
+
+
+def _reason(provider: str, code: int | None, body: str) -> str:
+    label = PROVIDER_LABEL.get(provider, provider)
+    b = (body or "").lower()
+    if code == 429:
+        if "insufficient_quota" in b or "credit" in b or "billing" in b:
+            return f"{label} out of credits (429)"
+        return f"{label} quota exceeded (429)"
+    if code in (401, 403):
+        return f"{label} key rejected ({code})"
+    if code == 404:
+        return f"{label} model not found (404)"
+    if code is not None and code >= 500:
+        return f"{label} server error ({code})"
+    if code is None:
+        return f"{label} unreachable ({body or 'network'})"
+    return f"{label} HTTP {code}"
+
+
+def _openai_turn(system: str, messages: list, tools: list, key: str, *,
+                 provider: str = "openai", timeout: float = 60.0) -> dict:
+    """One chat.completions tool-calling turn (OpenAI or an OpenAI-compatible API)."""
+    if provider == "groq":
+        url, model = "https://api.groq.com/openai/v1/chat/completions", GROQ_MODEL
+    else:
+        url, model = "https://api.openai.com/v1/chat/completions", OPENAI_MODEL
+    body: dict = {
+        "model": model,
+        "messages": [{"role": "system", "content": system}] + messages,
+        "max_tokens": MAX_OUT_TOKENS,
+        "temperature": 0.3,
+    }
+    if tools:
+        body["tools"] = tools
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(body).encode("utf-8"),
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        err = e.read().decode("utf-8", errors="replace")[:300]
+        raise ProviderUnavailable(provider, e.code, err) from e
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        raise ProviderUnavailable(provider, None, type(e).__name__) from e
+
+
+# ---- provider-neutral history -------------------------------------------------
+# {"role":"user","text":...}
+# {"role":"assistant","text":...,"calls":[{"id","name","args"}],"gemini_parts":[...]|None}
+# {"role":"tool","results":[{"id","name","result"}]}
+
+
+def _to_gemini(history: list) -> list:
+    out = []
+    for h in history:
+        if h["role"] == "user":
+            out.append({"role": "user", "parts": [{"text": h["text"]}]})
+        elif h["role"] == "assistant":
+            parts = h.get("gemini_parts")
+            if not parts:
+                parts = ([{"text": h["text"]}] if h.get("text") else []) + [
+                    {"functionCall": {"name": c["name"], "args": c["args"]}} for c in h["calls"]
+                ]
+            out.append({"role": "model", "parts": parts})
+        else:
+            out.append({"role": "user", "parts": [
+                {"functionResponse": {"name": r["name"], "response": _wrap(r["result"])}}
+                for r in h["results"]
+            ]})
+    return out
+
+
+def _to_openai(history: list) -> list:
+    out = []
+    for h in history:
+        if h["role"] == "user":
+            out.append({"role": "user", "content": h["text"]})
+        elif h["role"] == "assistant":
+            msg: dict = {"role": "assistant", "content": h.get("text") or None}
+            if h["calls"]:
+                msg["tool_calls"] = [
+                    {"id": c["id"], "type": "function",
+                     "function": {"name": c["name"], "arguments": json.dumps(c["args"], ensure_ascii=False)}}
+                    for c in h["calls"]
+                ]
+            out.append(msg)
+        else:
+            for r in h["results"]:
+                out.append({"role": "tool", "tool_call_id": r["id"],
+                            "content": json.dumps(_wrap(r["result"]), ensure_ascii=False)[:8000]})
+    return out
+
+
+def _openai_tools(declarations: list) -> list:
+    return [{"type": "function", "function": {
+        "name": d["name"], "description": d.get("description", ""),
+        "parameters": d.get("parameters") or {"type": "object", "properties": {}},
+    }} for d in declarations]
+
+
+def _gemini_step(system, history, declarations, key) -> dict:
+    raw = _gemini_turn(system, _to_gemini(history), declarations, key)
+    _content, parts = _candidate_parts(raw)
+    calls = []
+    for i, p in enumerate(parts):
+        if "functionCall" in p:
+            fc = p["functionCall"]
+            calls.append({"id": str(fc.get("id") or f"g{uuid.uuid4().hex[:8]}_{i}"),
+                          "name": str(fc.get("name") or ""),
+                          "args": fc.get("args") if isinstance(fc.get("args"), dict) else {}})
+    text = " ".join(p.get("text", "") for p in parts if "text" in p and not p.get("thought")).strip()
+    return {"text": text, "calls": calls, "gemini_parts": parts}
+
+
+def _openai_step(system, history, declarations, key, provider="openai") -> dict:
+    raw = _openai_turn(system, _to_openai(history), _openai_tools(declarations), key, provider=provider)
+    msg = (raw.get("choices") or [{}])[0].get("message") or {}
+    calls = []
+    for tc in msg.get("tool_calls") or []:
+        fn = tc.get("function") or {}
+        try:
+            args = json.loads(fn.get("arguments") or "{}")
+        except json.JSONDecodeError:
+            args = {}
+        calls.append({"id": str(tc.get("id") or uuid.uuid4().hex[:8]),
+                      "name": str(fn.get("name") or ""),
+                      "args": args if isinstance(args, dict) else {}})
+    return {"text": (msg.get("content") or "").strip(), "calls": calls, "gemini_parts": None}
 
 
 def _declarations_for(allowed: set[str]) -> list[dict]:
@@ -134,10 +287,23 @@ def _candidate_parts(raw: dict) -> tuple[dict, list]:
     return content, content.get("parts") or []
 
 
+
+_KEY_ENV = {
+    "gemini": ("JARVIS_GEMINI_API_KEY", ("GEMINI_API_KEY", "GOOGLE_API_KEY")),
+    "openai": ("JARVIS_OPENAI_API_KEY", ("OPENAI_API_KEY",)),
+    "groq": ("JARVIS_GROQ_API_KEY", ("GROQ_API_KEY",)),
+}
+PROVIDER_ORDER = ("gemini", "openai", "groq")
+
+
 class AgentHub:
-    def __init__(self, root: Path, gemini_key: str | None = None):
+    def __init__(self, root: Path, gemini_key: str | None = None, keys: dict | None = None,
+                 on_event=None):
         self.root = Path(root)
         self._gemini_key_override = gemini_key
+        self._key_overrides = dict(keys or {})
+        self.on_event = on_event
+        self._lock = threading.RLock()
         self._state = {r["id"]: "standby" for r in ROLES}
         self._threads: dict[str, threading.Thread] = {}
         self._stop = {r["id"]: threading.Event() for r in ROLES}
@@ -145,13 +311,24 @@ class AgentHub:
         self._last_reply = {r["id"]: "" for r in ROLES}
         self._steps = {r["id"]: [] for r in ROLES}
         self._goals = {r["id"]: "" for r in ROLES}
-        # Pending R3 tool requests (MCP / screen) awaiting operator confirm.
+        self._provider = {r["id"]: "" for r in ROLES}
+        self._notice = {r["id"]: "" for r in ROLES}
+        self._files = {r["id"]: [] for r in ROLES}
+        # Pending R3 tool requests (MCP / screen / file) awaiting operator confirm.
         self._pending: dict[str, dict] = {}
+        self._pending_shell_cwd: dict[str, str] = {}
+        # Saved loop state while an R3 request waits, so the agent resumes after approval.
+        self._halted: dict[str, dict] = {}
         self._mcp_maps: dict[str, dict] = {r["id"]: {} for r in ROLES}
+
+    # ---- R3 plumbing ----
 
     def pending(self, role_id: str) -> dict | None:
         p = self._pending.get(role_id)
         return dict(p) if p else None
+
+    def pending_shell_cwd(self, role_id: str) -> str:
+        return self._pending_shell_cwd.get(role_id, "")
 
     def take_pending(self, role_id: str, token: str) -> dict | None:
         """Pop the pending R3 tool request iff the token matches."""
@@ -169,19 +346,49 @@ class AgentHub:
             return False
         self._detail[role_id] = "tool rejected"
         self._steps[role_id] = [s for s in self._steps[role_id] if not s.startswith("needs_r3_tool:")]
+        self.resume(role_id, {"ok": False, "error": "operator rejected this action"})
         return True
 
     def record_result(self, role_id: str, text: str) -> None:
         if role_id in self._last_reply:
             self._last_reply[role_id] = str(text)[:2000]
 
+    def note_file(self, role_id: str, rel: str) -> None:
+        if role_id in self._files and rel and rel not in self._files[role_id]:
+            self._files[role_id].append(rel)
+
     def clear_r3(self, role_id: str) -> bool:
         """Clear a pending needs_r3 detail after the user confirmed the shell command."""
         if str(self._detail.get(role_id, "")).startswith("needs_r3:"):
             self._detail[role_id] = "shell confirmed"
             self._steps[role_id] = [s for s in self._steps[role_id] if not s.startswith("needs_r3:")]
+            self._pending_shell_cwd.pop(role_id, None)
             return True
         return False
+
+    def resume(self, role_id: str, result) -> bool:
+        """Feed the operator-approved (or rejected) tool result back and continue the run."""
+        with self._lock:
+            saved = self._halted.pop(role_id, None)
+            if not saved or self._state.get(role_id) == "active":
+                return False
+            call = saved["call"]
+            results = saved["done"] + [{"id": call["id"], "name": call["name"], "result": result}] + [
+                {"id": c["id"], "name": c["name"],
+                 "result": {"ok": False, "error": "skipped while waiting for operator approval; call again if still needed"}}
+                for c in saved["skipped"]
+            ]
+            saved["history"].append({"role": "tool", "results": results})
+            self._steps[role_id].append("resumed after operator decision")
+            self._stop[role_id].clear()
+            self._state[role_id] = "active"
+            self._detail[role_id] = "resuming"
+            t = threading.Thread(target=self._run, args=(role_id, saved), daemon=True)
+            self._threads[role_id] = t
+            t.start()
+            return True
+
+    # ---- views / lifecycle ----
 
     def list(self) -> list[dict]:
         out = []
@@ -197,61 +404,137 @@ class AgentHub:
                     "steps": list(self._steps[rid]),
                     "tools": r["tools"],
                     "pending": _pending_view(self._pending.get(rid)),
+                    "goal": self._goals[rid],
+                    "provider": self._provider[rid],
+                    "notice": self._notice[rid],
+                    "files": list(self._files[rid]),
+                    "workspace": str(self.root / "workspace") if "write_file" in r["tools"] else "",
                 }
             )
         return out
 
     def start(self, role_id: str, goal: str | None = None) -> dict:
-        if role_id not in self._state:
-            return {"ok": False, "error": "unknown role"}
-        if self._state[role_id] == "active":
+        with self._lock:
+            if role_id not in self._state:
+                return {"ok": False, "error": "unknown role"}
+            if self._state[role_id] == "active":
+                return {"ok": False, "error": f"{_role(role_id)['name']} is busy: {self._goals[role_id][:80]}",
+                        "busy": True, "data": {"id": role_id, "state": "active"}}
+            self._stop[role_id].clear()
+            self._goals[role_id] = (goal or "").strip()
+            self._steps[role_id] = []
+            self._last_reply[role_id] = ""
+            self._pending.pop(role_id, None)
+            self._halted.pop(role_id, None)
+            self._pending_shell_cwd.pop(role_id, None)
+            self._files[role_id] = []
+            self._notice[role_id] = ""
+            self._provider[role_id] = ""
+            self._detail[role_id] = "starting"
+            self._state[role_id] = "active"
+            t = threading.Thread(target=self._run, args=(role_id,), daemon=True)
+            self._threads[role_id] = t
+            t.start()
             return {"ok": True, "data": {"id": role_id, "state": "active"}}
-        self._stop[role_id].clear()
-        self._goals[role_id] = (goal or "").strip()
-        self._steps[role_id] = []
-        self._last_reply[role_id] = ""
-        self._pending.pop(role_id, None)
-        self._detail[role_id] = "starting"
-        self._state[role_id] = "active"
-        t = threading.Thread(target=self._run, args=(role_id,), daemon=True)
-        self._threads[role_id] = t
-        t.start()
-        return {"ok": True, "data": {"id": role_id, "state": "active"}}
 
     def stop(self, role_id: str) -> dict:
         if role_id not in self._state:
             return {"ok": False, "error": "unknown role"}
         self._stop[role_id].set()
+        self._halted.pop(role_id, None)
         self._state[role_id] = "standby"
         if not self._detail[role_id]:
             self._detail[role_id] = "stopped"
         return {"ok": True, "data": {"id": role_id, "state": "standby"}}
 
+    def wait(self, role_id: str, timeout: float = 300.0) -> dict:
+        """Block until the role is no longer active (headless tests / scripts)."""
+        import time
+
+        t0 = time.time()
+        while self._state.get(role_id) == "active" and time.time() - t0 < timeout:
+            time.sleep(0.2)
+        return next(a for a in self.list() if a["id"] == role_id)
+
+    def _emit(self, role_id: str, kind: str) -> None:
+        cb = self.on_event
+        if not cb:
+            return
+        try:
+            cb(role_id, kind, next(a for a in self.list() if a["id"] == role_id))
+        except Exception:
+            pass
+
+    # ---- providers ----
+
     def _resolve_gemini(self) -> str:
         if self._gemini_key_override is not None:
             return self._gemini_key_override.strip()
         load_secrets(self.root)
-        return _resolve_key(
-            "JARVIS_GEMINI_API_KEY", ("GEMINI_API_KEY", "GOOGLE_API_KEY")
-        )
+        return _resolve_key(*_KEY_ENV["gemini"])
 
-    def _run(self, role_id: str) -> None:
+    def _providers(self) -> list[tuple[str, str]]:
+        out = []
+        for name in PROVIDER_ORDER:
+            if name == "gemini":
+                key = self._resolve_gemini()
+            elif name in self._key_overrides:
+                key = (self._key_overrides[name] or "").strip()
+            elif self._gemini_key_override is not None and not self._key_overrides:
+                key = ""  # explicit test/override mode: Gemini only
+            else:
+                load_secrets(self.root)
+                key = _resolve_key(*_KEY_ENV[name])
+            if key:
+                out.append((name, key))
+        return out
+
+    def _llm_turn(self, role_id, providers, idx, system, history, declarations):
+        notes = []
+        while idx < len(providers):
+            name, key = providers[idx]
+            try:
+                if name == "gemini":
+                    turn = _gemini_step(system, history, declarations, key)
+                else:
+                    turn = _openai_step(system, history, declarations, key, provider=name)
+                if self._provider[role_id] != name:
+                    self._provider[role_id] = name
+                    self._steps[role_id].append(f"provider: {PROVIDER_LABEL.get(name, name)}")
+                return turn, idx
+            except ProviderUnavailable as e:
+                notes.append(e.reason)
+                idx += 1
+                if idx < len(providers):
+                    nxt = PROVIDER_LABEL.get(providers[idx][0], providers[idx][0])
+                    msg = f"{e.reason} — using {nxt}"
+                else:
+                    msg = e.reason
+                self._notice[role_id] = msg
+                self._steps[role_id].append("⚠ " + msg)
+        raise AllProvidersFailed("All AI providers failed: " + "; ".join(notes))
+
+    # ---- main loop ----
+
+    def _run(self, role_id: str, saved: dict | None = None) -> None:
         role = _role(role_id)
         if not role:
             self._state[role_id] = "error"
             self._detail[role_id] = "unknown role"
             return
-        key = self._resolve_gemini()
-        if not key:
+        providers = self._providers()
+        if not providers:
             self._state[role_id] = "error"
             self._detail[role_id] = "missing_key"
-            self._last_reply[role_id] = "missing_key"
+            self._last_reply[role_id] = "missing_key — add a Gemini or OpenAI key on the API Keys / secrets file"
+            self._emit(role_id, "error")
             return
 
-        tools = AgentTools(self.root)
+        tools = AgentTools(self.root, actor=f"agent-{role_id}")
         allowed = set(role["tools"])
         declarations = _declarations_for(allowed)
-        self._mcp_maps[role_id] = {}
+        if saved is None:
+            self._mcp_maps[role_id] = {}
         if role.get("mcp"):
             try:
                 from mcp_client import list_tools
@@ -262,7 +545,7 @@ class AgentHub:
                     self._mcp_maps[role_id][t["name"]] = t
                     allowed.add(t["name"])
                     declarations.append(t["decl"])
-                if self._mcp_maps[role_id]:
+                if self._mcp_maps[role_id] and saved is None:
                     self._steps[role_id].append(f"mcp tools: {len(self._mcp_maps[role_id])}")
             except Exception as e:
                 self._steps[role_id].append(f"mcp unavailable: {type(e).__name__}")
@@ -273,73 +556,107 @@ class AgentHub:
             f"{role['prompt']}\n"
             "Call tools when useful, then answer the operator in plain text."
         )
-        contents: list = [{"role": "user", "parts": [{"text": f"Goal: {goal}"}]}]
+        max_steps = int(role.get("max_steps") or MAX_STEPS)
+        if saved:
+            history, idx, first = saved["history"], saved["idx"], saved["step"]
+        else:
+            history, idx, first = [{"role": "user", "text": f"Goal: {goal}"}], 0, 0
         try:
-            for step_i in range(MAX_STEPS):
+            for step_i in range(first, max_steps):
                 if self._stop[role_id].is_set():
                     self._detail[role_id] = "stopped"
                     self._state[role_id] = "standby"
                     return
-                self._detail[role_id] = f"step {step_i + 1}/{MAX_STEPS}"
+                self._detail[role_id] = f"step {step_i + 1}/{max_steps}"
                 try:
-                    raw = _gemini_turn(system, contents, declarations, key)
+                    turn, idx = self._llm_turn(role_id, providers, idx, system, history, declarations)
                 except ToolsRejected:
                     self._steps[role_id].append("fallback_json_protocol")
-                    self._run_json(role_id, role, tools, allowed, goal, key, step_i)
+                    self._run_json(role_id, role, tools, allowed, goal, providers[idx][1], step_i)
+                    det = str(self._detail[role_id])
+                    self._emit(role_id, "error" if self._state[role_id] == "error"
+                               else ("needs_approval" if det.startswith("needs_r3") else "done"))
                     return
-                content, parts = _candidate_parts(raw)
-                calls = [p["functionCall"] for p in parts if "functionCall" in p]
-                if not calls:
-                    text = " ".join(p.get("text", "") for p in parts).strip()
+                if not turn["calls"]:
+                    text = turn["text"]
                     if not text:
-                        raise RuntimeError("Gemini returned empty reply")
+                        raise RuntimeError(f"{PROVIDER_LABEL.get(providers[idx][0])} returned empty reply")
                     self._last_reply[role_id] = text[:2000]
                     self._steps[role_id].append("final")
                     self._detail[role_id] = "done"
                     self._state[role_id] = "standby"
+                    self._emit(role_id, "done")
                     return
-                contents.append({"role": "model", "parts": parts})
-                responses = []
-                for call in calls:
-                    name = str(call.get("name") or "")
-                    args = call.get("args") if isinstance(call.get("args"), dict) else {}
-                    result = self._exec_tool(role_id, tools, allowed, name, args)
+                history.append({"role": "assistant", "text": turn["text"], "calls": turn["calls"],
+                                "gemini_parts": turn["gemini_parts"]})
+                done = []
+                for i, call in enumerate(turn["calls"]):
+                    if self._stop[role_id].is_set():
+                        break
+                    result = self._exec_tool(role_id, tools, allowed, call["name"], call["args"])
                     if isinstance(result, dict) and result.get("needs_r3"):
+                        self._halted[role_id] = {
+                            "history": history, "idx": idx, "step": step_i + 1,
+                            "done": done, "call": call, "skipped": turn["calls"][i + 1:],
+                        }
                         self._halt_r3(role_id, result)
+                        self._emit(role_id, "needs_approval")
                         return
-                    responses.append(
-                        {"functionResponse": {"name": name, "response": _wrap(result)}}
-                    )
-                contents.append({"role": "user", "parts": responses})
+                    done.append({"id": call["id"], "name": call["name"], "result": result})
+                history.append({"role": "tool", "results": done})
             self._finish_max(role_id)
+            self._emit(role_id, "done")
+        except AllProvidersFailed as e:
+            self._state[role_id] = "error"
+            self._detail[role_id] = str(e)[:200]
+            self._last_reply[role_id] = str(e)[:500]
+            self._emit(role_id, "error")
         except Exception as e:
             self._state[role_id] = "error"
             self._detail[role_id] = str(e)[:200]
             self._last_reply[role_id] = f"error: {e}"[:500]
+            self._emit(role_id, "error")
 
     def _exec_tool(self, role_id, tools, allowed, name, args):
         if name not in allowed:
             msg = f"blocked tool {name}"
             self._steps[role_id].append(msg)
             return {"ok": False, "error": msg}
-        self._steps[role_id].append(
-            f"{name}({json.dumps(args, ensure_ascii=False)[:120]})"
-        )
+        if name == "write_file":
+            content = str((args or {}).get("content") or "")
+            self._steps[role_id].append(
+                f"write_file {str((args or {}).get('path'))[:80]} ({len(content.encode('utf-8'))} B): "
+                + content[:60].replace("\n", " ")
+            )
+        else:
+            self._steps[role_id].append(
+                f"{name}({json.dumps(args, ensure_ascii=False)[:120]})"
+            )
         mcp = self._mcp_maps.get(role_id, {}).get(name)
         if mcp:
             # Every MCP tool call is R3; the model can never mark it confirmed.
             return {"ok": False, "needs_r3": True, "kind": "mcp", "server": mcp["server"],
                     "tool": mcp["tool"], "args": dict(args or {})}
-        return tools.call(name, args)
+        result = tools.call(name, args)
+        if name == "write_file" and isinstance(result, dict) and result.get("ok"):
+            self.note_file(role_id, (result.get("data") or {}).get("path", ""))
+        if isinstance(result, dict) and not result.get("ok") and not result.get("needs_r3") and result.get("error"):
+            self._steps[role_id].append(f"  ↳ {name} failed: {str(result['error'])[:100]}")
+        return result
 
     def _halt_r3(self, role_id: str, result: dict) -> None:
         kind = result.get("kind")
-        if kind in ("mcp", "screen"):
+        if kind in ("mcp", "screen", "file"):
             token = uuid.uuid4().hex[:12]
             if kind == "mcp":
                 label = f"MCP {result.get('server')}.{result.get('tool')}"
                 pend = {"kind": "mcp", "server": str(result.get("server")), "tool": str(result.get("tool")),
                         "args": result.get("args") or {}, "token": token, "label": label}
+            elif kind == "file":
+                op = str(result.get("op") or "")
+                label = f"{'Overwrite' if op == 'overwrite' else 'Delete'} workspace/{result.get('path')}"
+                pend = {"kind": "file", "op": op, "path": str(result.get("path")),
+                        "content": str(result.get("content") or ""), "token": token, "label": label}
             else:
                 label = "Screen capture"
                 pend = {"kind": "screen", "question": str(result.get("question") or ""),
@@ -351,11 +668,14 @@ class AgentHub:
             self._state[role_id] = "standby"
             return
         cmd = str(result.get("command") or "")
+        if result.get("cwd"):
+            self._pending_shell_cwd[role_id] = str(result["cwd"])
         self._steps[role_id].append(f"needs_r3: {cmd[:120]}")
         self._detail[role_id] = "needs_r3:" + cmd
         self._last_reply[role_id] = (
-            f"Shell command needs operator R3 approval: {cmd}"[:2000]
-        )
+            f"Shell command needs operator R3 approval: {cmd}"
+            + (f" (in workspace/{result['cwd']})" if result.get("cwd") else "")
+        )[:2000]
         self._state[role_id] = "standby"
 
     def _finish_max(self, role_id: str) -> None:
@@ -402,11 +722,17 @@ class AgentHub:
         self._finish_max(role_id)
 
 
+
+
 def _pending_view(p: dict | None) -> dict | None:
     if not p:
         return None
     out = {"kind": p.get("kind"), "label": p.get("label"), "token": p.get("token")}
-    if p.get("kind") == "mcp":
+    if p.get("kind") == "file":
+        out["op"] = p.get("op")
+        out["path"] = p.get("path")
+        out["args_preview"] = str(p.get("content") or "")[:400]
+    elif p.get("kind") == "mcp":
         out["args_preview"] = json.dumps(p.get("args") or {}, ensure_ascii=False)[:400]
     else:
         out["question"] = str(p.get("question") or "")[:300]

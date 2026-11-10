@@ -101,8 +101,80 @@ class BridgeApi:
         if self._hub is None:
             from agents.worker import AgentHub
 
-            self._hub = AgentHub(root=self.root)
+            self._hub = AgentHub(root=self.root, on_event=self._on_agent_event)
         return self._hub
+
+    def _on_agent_event(self, role_id: str, kind: str, row: dict) -> None:
+        """Agent finished / failed / needs approval: Live Feed line + short spoken report."""
+        try:
+            import cc_settings
+
+            name = row.get("name") or role_id
+            files = row.get("files") or []
+            prov = row.get("provider") or ""
+            if kind == "done":
+                summary = str(row.get("last_reply") or "").strip()
+                extra = f"; files: {', '.join(files[:8])}" if files else ""
+                cc_settings.audit(self.root, f"agent-{role_id}", "agent_done",
+                                  f"{summary[:200]}{extra} [{prov}]")
+                first = summary.split("\n", 1)[0].split(". ", 1)[0][:160]
+                say = f"{name} finished. " + (f"Created {len(files)} file{'s' if len(files) != 1 else ''}. " if files else "") + first
+            elif kind == "needs_approval":
+                label = (row.get("pending") or {}).get("label") or str(row.get("detail") or "")[:120]
+                cc_settings.audit(self.root, f"agent-{role_id}", "agent_needs_approval", label)
+                say = f"{name} needs your approval on the Agents page."
+            else:
+                cc_settings.audit(self.root, f"agent-{role_id}", "agent_error", str(row.get("detail") or "")[:200])
+                say = f"{name} hit a problem: {str(row.get('detail') or '')[:120]}"
+            self.speak(say)
+        except Exception:
+            pass
+
+    def command(self, text: str = "") -> dict:
+        """Typed or spoken command: start the right agent now, else answer via chat."""
+        try:
+            return self._route(str(text or ""), speak=False)
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def _route(self, text: str, speak: bool = False) -> dict:
+        from voice_intents import announce, match
+
+        m = match(text)
+        intent = m["intent"]
+        if intent == "agent":
+            from agents.registry import ROLES
+
+            hub = self._agents_hub()
+            name = next((r["name"] for r in ROLES if r["id"] == m["role"]), m["role"])
+            r = hub.start(m["role"], goal=m["goal"])
+            if not r.get("ok"):
+                say = f"{name} is still busy with its last job. Stop it first or wait."
+                return {"ok": True, "data": {"routed": "agent", "role": m["role"], "started": False,
+                                             "reply": say, "error": r.get("error")}}
+            say = announce(name, m["verb"], m["goal"])
+            import cc_settings
+
+            cc_settings.audit(self.root, f"agent-{m['role']}", "agent_start_by_command", m["goal"][:200])
+            if speak:
+                self.speak(say)
+            return {"ok": True, "data": {"routed": "agent", "role": m["role"], "goal": m["goal"],
+                                         "started": True, "reply": say}}
+        if intent == "stop_agent":
+            self._agents_hub().stop(m["role"])
+            say = f"Stopped the {m['role']} agent."
+            return {"ok": True, "data": {"routed": "stop_agent", "role": m["role"], "reply": say}}
+        if intent in ("start_trading", "stop_trading"):
+            # Reserved for the voice-trading release; nothing is armed or traded here.
+            say = "Voice trading isn't switched on in this version yet. No trading was started."
+            return {"ok": True, "data": {"routed": intent, "reply": say}}
+        from chat import reply
+
+        ans = reply(text, root=self.root)
+        if not ans.get("ok"):
+            return {"ok": False, "error": ans.get("error") or "chat failed"}
+        return {"ok": True, "data": {"routed": "chat", "reply": ans["data"]["reply"],
+                                     "provider": ans["data"].get("provider", "")}}
 
     def agents(self) -> dict:
         try:
@@ -142,11 +214,16 @@ class BridgeApi:
             pending = detail[len("needs_r3:"):].strip()
             if normalize(pending) != normalize(cmd):
                 return {"ok": False, "error": "command does not match pending R3 request"}
+            cwd = hub.pending_shell_cwd(rid) if hasattr(hub, "pending_shell_cwd") else ""
+            result = {"ok": False, "error": "shell failed"}
             try:
-                return AgentTools(self.root).shell(cmd, confirmed=True)
+                result = AgentTools(self.root, actor=f"agent-{rid}").shell(cmd, confirmed=True, cwd=cwd)
+                return result
             finally:
                 # Clear after any authorized attempt so the UI never sticks.
                 hub.clear_r3(rid)
+                if hasattr(hub, "resume"):
+                    hub.resume(rid, result)
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -256,15 +333,15 @@ class BridgeApi:
                     voice.speak("Yes sir.", wait=False)
                 except Exception:
                     pass
-            from chat import reply
-
-            ans = reply(text, root=self.root)
+            ans = self._route(text, speak=False)
             if not ans.get("ok"):
                 return {"ok": False, "error": ans.get("error") or "chat failed", "text": text}
             return {
                 "ok": True,
                 "text": text,
                 "reply": ans["data"]["reply"],
+                "routed": ans["data"].get("routed", "chat"),
+                "role": ans["data"].get("role", ""),
                 "engine": heard.get("engine", ""),
             }
         except Exception as e:
@@ -422,9 +499,7 @@ class BridgeApi:
                 return
             text = heard.get("text") or ""
             self._wake_info.update(state="thinking", heard=text, engine=heard.get("engine", ""))
-            from chat import reply
-
-            ans = reply(text, root=self.root)
+            ans = self._route(text, speak=False)
             if not ans.get("ok"):
                 self._wake_info.update(state="idle", error=ans.get("error") or "chat failed")
                 return
@@ -529,11 +604,27 @@ class BridgeApi:
                                   "depends on the MCP tool")
                 text = (r.get("data") or {}).get("text") if r.get("ok") else r.get("error")
                 hub.record_result(rid, f"{pend['label']}: {text or ''}")
+                hub.resume(rid, r)
                 return r
             if pend["kind"] == "screen":
                 r = self.screen_read(pend.get("question") or "", confirmed=True)
                 desc = (r.get("data") or {}).get("description") if r.get("ok") else r.get("error")
                 hub.record_result(rid, f"Screen: {desc or ''}")
+                hub.resume(rid, r)
+                return r
+            if pend["kind"] == "file":
+                from agent_tools import AgentTools
+
+                t = AgentTools(self.root, actor=f"agent-{rid}")
+                if pend.get("op") == "overwrite":
+                    r = t.write_file(pend["path"], pend.get("content") or "", confirmed=True)
+                    if r.get("ok"):
+                        hub.note_file(rid, pend["path"])
+                elif pend.get("op") == "delete":
+                    r = t.delete_file(pend["path"], confirmed=True)
+                else:
+                    r = {"ok": False, "error": "unknown file op"}
+                hub.resume(rid, r)
                 return r
             return {"ok": False, "error": "unknown pending kind"}
         except Exception as e:
