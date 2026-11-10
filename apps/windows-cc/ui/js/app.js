@@ -42,9 +42,40 @@ function renderHealth(status, agents, llms, mem) {
   const ok = status?.policy_ok && !status?.quiet_hours;
   pill.textContent = ok ? "OPTIMAL" : (status?.system_status || "CHECK");
   pill.classList.toggle("bad", !ok);
-  const score = (ok ? 0.5 : 0.2) + Math.min(0.4, connected * 0.08) + Math.min(0.2, active * 0.05);
-  if (core3d) core3d.setHealth(score);
-  $("core-page").innerHTML = $("health-list").innerHTML;
+}
+
+function renderReadiness(data) {
+  const pct = Math.max(0, Math.min(100, Math.round(Number(data?.score_pct) || 0)));
+  const ring = $("ready-ring");
+  const num = $("g-ready");
+  if (num) num.textContent = String(pct);
+  if (ring) {
+    ring.style.setProperty("--pct", String(pct));
+    ring.classList.remove("ready-high", "ready-mid", "ready-low");
+    ring.classList.add(pct >= 80 ? "ready-high" : (pct >= 50 ? "ready-mid" : "ready-low"));
+  }
+  const list = $("ready-list");
+  if (list) {
+    list.innerHTML = (data?.checks || []).map((c) => {
+      if (c.ok) {
+        return `<li class="ready-ok"><span class="tick">✓</span><span>${esc(c.label)}</span></li>`;
+      }
+      return `<li class="ready-miss"><span class="tick">○</span><span>${esc(c.label)}</span><div class="fix">${esc(c.fix)}</div></li>`;
+    }).join("") || `<li class="muted">Readiness checks unavailable.</li>`;
+  }
+  if (core3d) core3d.setHealth(pct / 100);
+  const core = $("core-page");
+  if (core) {
+    const missing = (data?.checks || []).filter((c) => !c.ok);
+    const bits = [`<p><strong>Jarvis readiness: ${pct}%</strong></p>`];
+    if (missing.length) {
+      bits.push("<ul>" + missing.map((c) => `<li>${esc(c.label)} — ${esc(c.fix)}</li>`).join("") + "</ul>");
+    } else if (data?.checks?.length) {
+      bits.push(`<p class="muted">All readiness checks passed.</p>`);
+    }
+    bits.push($("health-list") ? $("health-list").innerHTML : "");
+    core.innerHTML = bits.join("");
+  }
 }
 
 const pendingShell = {};
@@ -151,7 +182,7 @@ function renderTimeline(briefText) {
 }
 
 async function refresh() {
-  const [st, met, feed, mem, llms, agents, brief] = await Promise.all([
+  const [st, met, feed, mem, llms, agents, brief, ready] = await Promise.all([
     call("status"),
     call("metrics"),
     call("feed", 50),
@@ -159,9 +190,12 @@ async function refresh() {
     call("llms"),
     call("agents"),
     call("brief"),
+    call("readiness"),
   ]);
   if (st.ok) renderHealth(st.data, agents.ok ? agents.data.agents : [], llms.ok ? llms.data.providers : [], mem.ok ? mem.data : null);
   else banner(st.error || "status offline");
+  if (ready && ready.ok) renderReadiness(ready.data);
+  else if (core3d) core3d.setHealth(0);
   if (met.ok) renderMetrics(met.data);
   if (feed.ok) renderFeed(feed.data.items, $("feed-search").value);
   if (mem.ok) renderMemory(mem.data);

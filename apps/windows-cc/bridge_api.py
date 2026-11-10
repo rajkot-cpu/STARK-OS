@@ -59,6 +59,16 @@ class BridgeApi:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+
+    def readiness(self) -> dict:
+        """Weighted Jarvis readiness score. Never includes secret values."""
+        try:
+            from readiness import compute_readiness
+
+            return {"ok": True, "data": compute_readiness(self.root)}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     def feed(self, limit: int = 50) -> dict:
         try:
             from feed import tail

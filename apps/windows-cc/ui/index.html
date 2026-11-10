@@ -49,7 +49,17 @@
       <section id="page-home" class="page active">
         <div class="hero">
           <div class="health panel">
-            <h3>AI Core Overview</h3>
+            <h3>Jarvis readiness</h3>
+            <div class="ready-wrap">
+              <div id="ready-ring" class="ready-ring" style="--pct: 0" aria-label="Jarvis readiness">
+                <div class="ready-inner">
+                  <span id="g-ready">0</span>%
+                  <small>Jarvis readiness</small>
+                </div>
+              </div>
+              <ul id="ready-list"></ul>
+            </div>
+            <h3 class="health-sub">AI Core Overview</h3>
             <ul id="health-list"></ul>
           </div>
           <div class="core panel">
@@ -84,10 +94,11 @@
         <div class="bottom">
           <div class="panel">
             <h3>System Monitor</h3>
+            <div class="usage-caption">PC usage</div>
             <div class="gauges">
-              <div class="gauge"><span id="g-cpu">0</span>%<small>CPU</small></div>
-              <div class="gauge"><span id="g-ram">0</span>%<small>RAM</small></div>
-              <div class="gauge"><span id="g-disk">0</span>%<small>Disk</small></div>
+              <div class="gauge"><span id="g-cpu">0</span>%<small>CPU usage</small></div>
+              <div class="gauge"><span id="g-ram">0</span>%<small>RAM usage</small></div>
+              <div class="gauge"><span id="g-disk">0</span>%<small>Disk usage</small></div>
             </div>
           </div>
           <div class="panel">

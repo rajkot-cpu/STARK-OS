@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -15,6 +16,24 @@ PROVIDERS = (
 )
 
 _ALIASES = {env: aliases for _, _, env, aliases in PROVIDERS}
+
+# Last probe_all result — readiness() may reuse this instead of hitting the network.
+_PROBE_CACHE: dict = {"rows": None, "ts": 0.0}
+
+
+def cached_probes(max_age: float | None = 600.0) -> list[dict] | None:
+    """Return recent probe rows, or None if missing/stale. Never includes secret values."""
+    rows = _PROBE_CACHE.get("rows")
+    if not rows:
+        return None
+    if max_age is not None and (time.time() - float(_PROBE_CACHE.get("ts") or 0)) > max_age:
+        return None
+    return list(rows)
+
+
+def clear_cached_probes() -> None:
+    _PROBE_CACHE["rows"] = None
+    _PROBE_CACHE["ts"] = 0.0
 
 
 def load_secrets(root: Path | None = None) -> int:
@@ -141,4 +160,6 @@ def probe_all(timeout: float = 8.0, root: Path | None = None) -> list[dict]:
                 "detail": detail.decode() if isinstance(detail, bytes) else str(detail),
             }
         )
+    _PROBE_CACHE["rows"] = list(rows)
+    _PROBE_CACHE["ts"] = time.time()
     return rows
