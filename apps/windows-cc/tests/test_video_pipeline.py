@@ -51,8 +51,9 @@ class FakeFF:
     def to_wav(self, src, dst):
         A.write_wav(dst, np.zeros(int(A.RATE * 2.0), dtype=np.float32) + 0.1)
 
-    def open_encoder(self, out_dir, w, h, fps, audio, subs, fontsdir):
+    def open_encoder(self, out_dir, w, h, fps, audio, subs, fontsdir, out_size=None):
         self.enc_args = (out_dir, w, h, fps, audio, subs, fontsdir)
+        self.out_size = out_size
         self.proc = FakeProc()
         Path(out_dir, "video.mp4").write_bytes(b"mp4")
         return self.proc
@@ -206,10 +207,13 @@ class RealFFmpegTest(unittest.TestCase):
             deps.frames = render_scene_frames
             deps.sizes = {"portrait": (180, 320), "landscape": (320, 180)}
             deps.font = "DejaVu Sans"
+            deps.render_scale = 0.5
             r = run_job(Path(td), "make a video about chess", deps)
             self.assertGreater(r["duration"], 5)
             self.assertEqual({s["codec_type"] for s in r["probe"]["streams"]}, {"video", "audio"})
             self.assertTrue(Path(r["thumbnail"]).stat().st_size > 100)
+            v = next(s for s in r["probe"]["streams"] if s["codec_type"] == "video")
+            self.assertEqual((v["width"], v["height"]), (180, 320))  # upscaled from 90x160
 
 
 if __name__ == "__main__":

@@ -21,6 +21,7 @@ from .subs import build_ass
 from .trends import safe_trends
 
 FPS = 30
+RENDER_SCALE = 2 / 3   # 720x1280 internal for a 1080x1920 Short (CPU-only render)
 MAX_SECONDS = 95.0
 VOICES = {"en": "en-IN-PrabhatNeural", "hi": "hi-IN-MadhurNeural"}
 SIZES = {"portrait": (1080, 1920), "landscape": (1920, 1080)}
@@ -43,6 +44,7 @@ class Deps:
     font: str = "Nirmala UI"
     sizes: dict = field(default_factory=lambda: dict(SIZES))
     fps: int = FPS
+    render_scale: float = 1.0   # <1: render 3D smaller, ffmpeg lanczos-upscales (subtitles stay full-res)
 
 
 PICK_SYSTEM = (
@@ -204,13 +206,18 @@ def render(script: dict, scenes, total: float, req: dict, out: Path, root: Path,
     fonts = deps.fonts_dir(root)
     rel_fonts = os.path.relpath(fonts, out).replace("\\", "/") if fonts else None
     _emit(progress, f"4/6 Rendering 3D scenes ({W}x{H}, {total:.0f}s, {int(total * fps)} frames)")
-    proc = deps.ffmpeg.open_encoder(str(out), W, H, fps, "audio.wav", "subs.ass", rel_fonts)
+    rw = max(2, int(W * deps.render_scale) // 2 * 2)
+    rh = max(2, int(H * deps.render_scale) // 2 * 2)
+    if (rw, rh) == (W, H):
+        proc = deps.ffmpeg.open_encoder(str(out), W, H, fps, "audio.wav", "subs.ass", rel_fonts)
+    else:
+        proc = deps.ffmpeg.open_encoder(str(out), rw, rh, fps, "audio.wav", "subs.ass", rel_fonts, out_size=(W, H))
     nframes = int(round(total * fps))
     done, last_pct, t_start = 0, -1, time.time()
     try:
         for k, (sc, (s, d)) in enumerate(zip(script["scenes"], scenes)):
             n_this = int(round((s + d) * fps)) - int(round(s * fps))
-            for buf in deps.frames(sc["visual"], W, H, n_this / fps, fps, seed=k, t0=s):
+            for buf in deps.frames(sc["visual"], rw, rh, n_this / fps, fps, seed=k, t0=s):
                 _check(should_stop)
                 proc.stdin.write(buf)
                 done += 1
@@ -342,4 +349,4 @@ def default_deps(root: Path, providers: list[tuple[str, str]], progress=None, on
 
     return Deps(llm=llm, trends=trends.fetch_google_trends, news=trends.news_search,
                 youtube=trends.youtube_signals, tts=_tts, ffmpeg=ffmpeg_tools.FFmpeg(ff, fp),
-                frames=render3d.render_scene_frames, fonts_dir=_fonts_dir)
+                frames=render3d.render_scene_frames, fonts_dir=_fonts_dir, render_scale=RENDER_SCALE)

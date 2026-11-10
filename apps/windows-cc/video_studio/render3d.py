@@ -9,7 +9,7 @@ from __future__ import annotations
 import math
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 
 def hex_rgb(h: str) -> np.ndarray:
@@ -224,44 +224,59 @@ class SceneRenderer:
         return v
 
     # ---- drawing ----
+    def _grid_segments(self):
+        if not hasattr(self, "_gseg"):
+            a, b = [], []
+            for i in range(-10, 11):
+                a.append((i, 0, -10)); b.append((i, 0, 10))
+            self._gseg_fixed = (np.array(a, np.float32), np.array(b, np.float32))
+            self._gseg = True
+        return self._gseg_fixed
+
     def _grid(self, draw, eye, R, t):
-        col = tuple(int(c) for c in np.clip(self.c1 * 0.55, 0, 255))
+        col = np.clip(self.c1 * 0.55, 0, 255)
         y = -1.6
         off = (t * 0.8) % 1.0
-        segs = []
-        for i in range(-10, 11):
-            segs.append(((i, y, -10), (i, y, 10)))
-        for j in range(-10, 11):
-            z = j + off
-            segs.append(((-10, y, z), (10, y, z)))
-        for a, b in segs:
-            pts = np.array([a, b], dtype=np.float32)
-            cam = (pts - eye) @ R.T
-            if cam[0, 2] < 0.2 and cam[1, 2] < 0.2:
-                continue
-            if cam[0, 2] < 0.2 or cam[1, 2] < 0.2:  # clip to near plane
-                s = (0.2 - cam[0, 2]) / (cam[1, 2] - cam[0, 2])
-                pc = cam[0] + (cam[1] - cam[0]) * s
-                if cam[0, 2] < 0.2:
-                    cam[0] = pc
-                else:
-                    cam[1] = pc
-            xy = [(self.cx + self.f * c[0] / c[2], self.cy - self.f * c[1] / c[2]) for c in cam]
-            depth = float(min(cam[:, 2]))
-            fade = max(0.15, min(1.0, 6.0 / max(depth, 0.1)))
-            draw.line(xy, fill=tuple(int(c * fade) for c in col), width=2)
+        a1, b1 = self._grid_segments()
+        zs = np.arange(-10, 11, dtype=np.float32) + off
+        a2 = np.stack([np.full_like(zs, -10), np.zeros_like(zs), zs], 1)
+        b2 = np.stack([np.full_like(zs, 10), np.zeros_like(zs), zs], 1)
+        A = np.concatenate([a1, a2]) + np.array([0, y, 0], np.float32)
+        B = np.concatenate([b1, b2]) + np.array([0, y, 0], np.float32)
+        ca, cb = (A - eye) @ R.T, (B - eye) @ R.T
+        near = 0.2
+        keep = (ca[:, 2] >= near) | (cb[:, 2] >= near)
+        ca, cb = ca[keep], cb[keep]
+        s = np.clip((near - ca[:, 2]) / np.where(np.abs(cb[:, 2] - ca[:, 2]) < 1e-6, 1e-6, cb[:, 2] - ca[:, 2]), 0, 1)
+        fa = ca[:, 2] < near
+        ca[fa] = ca[fa] + (cb[fa] - ca[fa]) * s[fa, None]
+        s2 = np.clip((near - cb[:, 2]) / np.where(np.abs(ca[:, 2] - cb[:, 2]) < 1e-6, 1e-6, ca[:, 2] - cb[:, 2]), 0, 1)
+        fb = cb[:, 2] < near
+        cb[fb] = cb[fb] + (ca[fb] - cb[fb]) * s2[fb, None]
+        xa = np.stack([self.cx + self.f * ca[:, 0] / ca[:, 2], self.cy - self.f * ca[:, 1] / ca[:, 2]], 1)
+        xb = np.stack([self.cx + self.f * cb[:, 0] / cb[:, 2], self.cy - self.f * cb[:, 1] / cb[:, 2]], 1)
+        fade = np.clip(6.0 / np.maximum(np.minimum(ca[:, 2], cb[:, 2]), 0.1), 0.15, 1.0)
+        lim = 4 * max(self.W, self.H)
+        for p, q, k in zip(np.clip(xa, -lim, lim).tolist(), np.clip(xb, -lim, lim).tolist(), fade.tolist()):
+            draw.line([tuple(p), tuple(q)], fill=tuple(int(c * k) for c in col), width=2)
 
     def _particles(self, draw, eye, R, t):
         pts = self.particles + np.array([0, (t * 0.25) % 8, 0], dtype=np.float32)
         pts[:, 1] = (pts[:, 1] + 3) % 8 - 3
         xy, z = self._project(pts, eye, R)
         base = self.c2 * 0.5 + 127
-        for (x, y), d in zip(xy, z):
-            if d < 0.5:
-                continue
-            r = max(1.0, 9.0 / d)
-            b = min(1.0, 5.0 / d)
-            draw.ellipse((x - r, y - r, x + r, y + r), fill=tuple(int(c * b) for c in base))
+        ok = z >= 0.5
+        r = np.maximum(1.0, 9.0 / np.maximum(z, 0.5))
+        b = np.minimum(1.0, 5.0 / np.maximum(z, 0.5))
+        for (x, y), rr, bb in zip(xy[ok].tolist(), r[ok].tolist(), b[ok].tolist()):
+            draw.ellipse((x - rr, y - rr, x + rr, y + rr), fill=tuple(int(c * bb) for c in base))
+
+    @staticmethod
+    def _faces_array(o):
+        if "F" not in o:
+            o["F"] = np.array([f if len(f) == 4 else (f[0], f[1], f[2], f[2]) for f in o["faces"]], dtype=np.int32)
+            o["tri"] = np.array([len(f) == 3 for f in o["faces"]])
+        return o["F"], o["tri"]
 
     def frame(self, t: float, p: float) -> Image.Image:
         img = self.bg.copy()
@@ -269,45 +284,52 @@ class SceneRenderer:
         eye, R = self._camera(p)
         self._grid(draw, eye, R, t)
         self._particles(draw, eye, R, t)
-        polys = []
+        depths, pts_all, fills, edges, tris = [], [], [], [], []
         for o in self.objects:
+            F, tri = self._faces_array(o)
             wv = self._obj_world(o, t, p)
             xy, z = self._project(wv, eye, R)
+            a, b, c = wv[F[:, 0]], wv[F[:, 1]], wv[F[:, 2]]
+            n = np.cross(b - a, c - a)
+            nn = np.linalg.norm(n, axis=1)
+            good = nn > 1e-9
+            n = n / np.where(good, nn, 1)[:, None]
+            center = wv[F].mean(axis=1)
+            view = eye - center
+            facing = np.einsum("ij,ij->i", n, view)
+            zf = z[F]
+            mask = good & (zf.min(axis=1) >= 0.2)
+            if not o.get("wire"):
+                mask &= facing > 0
+            if not mask.any():
+                continue
             col = o["color"]
-            edge = tuple(int(c) for c in np.clip(col * 0.6 + 110, 0, 255))
-            for f in o["faces"]:
-                idx = list(f)
-                a, b, c = wv[idx[0]], wv[idx[1]], wv[idx[2]]
-                n = np.cross(b - a, c - a)
-                nn = float(np.linalg.norm(n))
-                if nn < 1e-9:
-                    continue
-                n = n / nn
-                center = wv[idx].mean(axis=0)
-                view = eye - center
-                facing = float(np.dot(n, view))
-                if facing <= 0 and not o.get("wire"):
-                    continue
-                if min(z[i] for i in idx) < 0.2:
-                    continue
-                lam = max(0.0, float(np.dot(n, self.light)))
-                rim = max(0.0, 1.0 - abs(facing) / (float(np.linalg.norm(view)) + 1e-6)) ** 2
-                shade = np.clip(col * (0.22 + 0.78 * lam) + 90 * rim, 0, 255)
-                if o.get("wire"):
-                    shade = shade * (0.35 if facing > 0 else 0.12)
-                polys.append((float(np.mean([z[i] for i in idx])), [tuple(xy[i]) for i in idx],
-                              tuple(int(c) for c in shade), edge if o["outline"] else None))
-        polys.sort(key=lambda q: -q[0])
-        for _, pts, fill, edge in polys:
-            draw.polygon(pts, fill=fill, outline=edge, width=2 if edge else 0)
+            lam = np.maximum(0.0, n @ self.light)
+            rim = np.maximum(0.0, 1.0 - np.abs(facing) / (np.linalg.norm(view, axis=1) + 1e-6)) ** 2
+            shade = np.clip(col[None, :] * (0.2 + 0.72 * lam[:, None]) + 90 * rim[:, None], 0, 255)
+            if o.get("wire"):
+                shade = shade * np.where(facing > 0, 0.35, 0.12)[:, None]
+            edge = tuple(int(v) for v in np.clip(col * 0.6 + 110, 0, 255)) if o["outline"] else None
+            idx = np.nonzero(mask)[0]
+            depths.append(zf[idx].mean(axis=1))
+            pts_all.append(xy[F[idx]])
+            fills.append(shade[idx].astype(np.int32))
+            edges.extend([edge] * len(idx))
+            tris.append(tri[idx])
+        if depths:
+            D = np.concatenate(depths)
+            P = np.concatenate(pts_all).tolist()
+            C = np.concatenate(fills).tolist()
+            T = np.concatenate(tris).tolist()
+            for i in np.argsort(-D).tolist():
+                pts = P[i][:3] if T[i] else P[i]
+                e = edges[i]
+                draw.polygon([tuple(q) for q in pts], fill=tuple(C[i]), outline=e, width=2 if e else 0)
         return self._bloom(img)
 
     def _bloom(self, img: Image.Image) -> Image.Image:
-        small = img.resize((self.W // 6, self.H // 6), Image.BILINEAR).filter(ImageFilter.GaussianBlur(4))
-        glow = np.asarray(small.resize((self.W, self.H), Image.BILINEAR), dtype=np.uint16)
-        base = np.asarray(img, dtype=np.uint16)
-        out = np.minimum(base + (glow * 3 >> 3), 255).astype(np.uint8)
-        return Image.fromarray(out, "RGB")
+        small = img.reduce(6).filter(ImageFilter.GaussianBlur(4)).point(lambda v: v * 3 // 8)
+        return ImageChops.add(img, small.resize(img.size, Image.BILINEAR))
 
 
 def render_scene_frames(visual: dict, width: int, height: int, seconds: float, fps: int, seed: int = 0,
@@ -321,7 +343,7 @@ def render_scene_frames(visual: dict, width: int, height: int, seconds: float, f
         img = sr.frame(t, i / max(1, n - 1))
         k = min(1.0, (i + 1) / nf, (n - i) / nf)
         if k < 1.0:
-            arr = (np.asarray(img, dtype=np.float32) * k).astype(np.uint8)
-            yield arr.tobytes()
+            kk = max(0.0, k)
+            yield img.point(lambda v: int(v * kk)).tobytes()
         else:
             yield img.tobytes()

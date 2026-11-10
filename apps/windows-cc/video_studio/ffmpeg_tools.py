@@ -116,8 +116,11 @@ class FFmpeg:
         self.run(["-i", src, "-ac", "1", "-ar", str(rate), "-c:a", "pcm_s16le", dst])
 
     def open_encoder(self, out_dir: str, width: int, height: int, fps: int, audio: str, subs: str | None,
-                     fontsdir: str | None, out_name: str = "video.mp4") -> subprocess.Popen:
+                     fontsdir: str | None, out_name: str = "video.mp4",
+                     out_size: tuple[int, int] | None = None) -> subprocess.Popen:
         vf = []
+        if out_size and tuple(out_size) != (width, height):
+            vf.append(f"scale={out_size[0]}:{out_size[1]}:flags=lanczos")
         if subs:
             f = f"subtitles=filename={subs}"
             if fontsdir:
