@@ -190,3 +190,15 @@ class TestReadinessScoring(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestReadinessExtras(unittest.TestCase):
+    def test_extras_never_change_score(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = _full_root(Path(td))
+            r = compute_readiness(root, env={}, probes=[], stt_ok=True, tts_ok=True, agents_ok=True)
+            ids = {e["id"] for e in r["extras"]}
+            self.assertTrue({"offline_stt", "wake_word", "neural_voice", "mcp_servers"} <= ids)
+            self.assertTrue(all(e["weight"] == 0 for e in r["extras"]))
+            self.assertEqual(sum(c["weight"] for c in CHECKS), 100)
+            self.assertNotIn(SECRET, json.dumps(r))
