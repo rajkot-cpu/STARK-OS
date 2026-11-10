@@ -63,6 +63,14 @@ function renderReadiness(data) {
       return `<li class="ready-miss"><span class="tick">○</span><span>${esc(c.label)}</span><div class="fix">${esc(c.fix)}</div></li>`;
     }).join("") || `<li class="muted">Readiness checks unavailable.</li>`;
   }
+  const extras = $("ready-extras");
+  if (extras) {
+    const rows = (data?.extras || []);
+    extras.innerHTML = rows.length
+      ? `<li class="muted">Optional (not scored):</li>` + rows.map((e) =>
+          `<li class="${e.ok ? "on" : ""}" title="${esc(e.note)}"><span>${e.ok ? "●" : "○"}</span><span>${esc(e.label)}</span></li>`).join("")
+      : "";
+  }
   if (core3d) core3d.setHealth(pct / 100);
   const core = $("core-page");
   if (core) {
@@ -99,6 +107,11 @@ function renderAgents(agents) {
         <div class="state-${a.state}">${esc(a.state)}${a.detail ? " · " + esc(a.detail) : ""}</div>
         ${reply ? `<div class="muted agent-reply">${reply}</div>` : ""}
         ${steps ? `<ul class="agent-steps">${steps}</ul>` : ""}
+        ${a.pending ? `<div class="tool-r3"><div class="gold">${esc(a.pending.label)} — needs your R3 approval</div>
+          ${a.pending.args_preview ? `<code>${esc(a.pending.args_preview)}</code>` : ""}
+          ${a.pending.kind === "screen" ? `<div class="muted">Jarvis will capture your screen once and describe it. Nothing is saved.</div>` : ""}
+          <button data-tool-confirm="${a.id}" data-token="${esc(a.pending.token)}">Approve once</button>
+          <button data-tool-reject="${a.id}">Reject</button></div>` : ""}
         ${pending ? `<div class="shell-r3"><div class="muted">Pending shell (R3):</div><code>${esc(pending)}</code>
           <button data-shell-confirm="${a.id}">Confirm shell</button></div>` : ""}
         <input class="agent-goal" data-goal-for="${a.id}" placeholder="Goal (optional)" />
@@ -117,6 +130,21 @@ function renderAgents(agents) {
       btn.disabled = true;
       const r = await call("shell_confirm", cmd, btn.dataset.shellConfirm);
       banner(r.ok ? "Shell command ran" : (r.error || `shell failed (rc ${r.data?.returncode ?? "?"})`));
+      await refresh();
+    };
+  });
+  document.querySelectorAll("[data-tool-confirm]").forEach((btn) => {
+    btn.onclick = async () => {
+      btn.disabled = true;
+      const r = await call("tool_confirm", btn.dataset.toolConfirm, btn.dataset.token);
+      banner(r.ok ? "Approved tool ran — see the agent card" : (r.error || "tool failed"));
+      await refresh();
+    };
+  });
+  document.querySelectorAll("[data-tool-reject]").forEach((btn) => {
+    btn.onclick = async () => {
+      await call("tool_reject", btn.dataset.toolReject);
+      banner("Tool request rejected");
       await refresh();
     };
   });
@@ -181,8 +209,97 @@ function renderTimeline(briefText) {
   $("calendar-page").innerHTML = $("timeline").innerHTML;
 }
 
+function ask(title, body, okLabel) {
+  return new Promise((resolve) => {
+    $("ask-title").textContent = title;
+    $("ask-body").textContent = body;
+    $("ask-ok").textContent = okLabel || "Confirm";
+    $("ask-modal").classList.remove("hidden");
+    const done = (v) => {
+      $("ask-modal").classList.add("hidden");
+      $("ask-ok").onclick = null;
+      $("ask-cancel").onclick = null;
+      resolve(v);
+    };
+    $("ask-ok").onclick = () => done(true);
+    $("ask-cancel").onclick = () => done(false);
+  });
+}
+
+function fillSelect(el, items, value) {
+  if (!el) return;
+  if (el.options.length !== items.length) {
+    el.innerHTML = items.map((i) => `<option value="${esc(i.id)}">${esc(i.label)}</option>`).join("");
+  }
+  if (document.activeElement !== el) el.value = value;
+}
+
+let lastWakeKey = "";
+
+function renderSettings(d) {
+  if (!d) return;
+  const s = d.settings || {};
+  const w = d.wake || {};
+  const wk = $("set-wake");
+  if (wk && document.activeElement !== wk) wk.checked = !!s.wake_word;
+  if (wk) wk.disabled = !w.available && !s.wake_word;
+  const wakeTxt = s.wake_word
+    ? (w.running ? `On — ${esc(w.listener_state)}${w.state && w.state !== "idle" ? " · " + esc(w.state) : ""}` : `On — not running ${esc(w.listener_error || "")}`)
+    : (w.available ? "Off" : `Unavailable: ${esc(w.reason)}`);
+  $("set-wake-status").innerHTML = `${wakeTxt}${w.heard ? `<div class="muted">Last heard: ${esc(w.heard)}</div>` : ""}${w.error ? `<div class="bad-txt">${esc(w.error)}</div>` : ""}`;
+  const side = $("wake-side");
+  if (side) {
+    side.textContent = s.wake_word ? (w.running ? `Hey Jarvis: ${w.state === "idle" ? "listening" : w.state}` : "Hey Jarvis: error") : "Hey Jarvis: off";
+    side.classList.toggle("on", !!(s.wake_word && w.running));
+  }
+  const key = `${w.heard}|${w.reply}`;
+  if (s.wake_word && w.reply && key !== lastWakeKey) {
+    lastWakeKey = key;
+    $("voice-state").textContent = `Heard: ${w.heard}`;
+    banner(w.reply);
+  }
+  fillSelect($("set-stt"), d.stt_engines || [], s.stt_engine);
+  const ws = d.whisper || {};
+  $("set-whisper-status").innerHTML = !ws.installed
+    ? `<span class="bad-txt">Offline engine not installed — using Google</span>`
+    : (ws.ready ? `<span class="ok-txt">Offline model ${esc(ws.model)} ready</span> <span class="muted">(${esc(ws.dir)})</span>`
+      : (ws.downloading ? `Downloading ${esc(ws.model)}… (about 75 MB)` : `Model ${esc(ws.model)} not downloaded yet — Google is used until it is.${ws.error ? ` <span class="bad-txt">${esc(ws.error)}</span>` : ""}`));
+  $("set-whisper-dl").disabled = !ws.installed || ws.ready || ws.downloading;
+  fillSelect($("set-voice"), d.voices || [], s.voice);
+  $("set-voice-status").innerHTML = d.edge_available
+    ? `<span class="muted">Natural voices need internet; Jarvis falls back to the Windows voice offline.</span>`
+    : `<span class="bad-txt">Natural voice engine missing — Windows voice only</span>`;
+  const m = d.mcp || {};
+  const rows = (m.servers || []).map((x) => `<div class="mcp-row"><strong>${esc(x.name)}</strong> ${x.enabled ? `<span class="ok-txt">enabled</span>` : `<span class="muted">disabled</span>`}
+      <div class="muted">${esc(x.command)} ${esc((x.args || []).join(" "))}</div>
+      ${x.description ? `<div class="muted">${esc(x.description)}</div>` : ""}
+      ${x.last_error ? `<div class="bad-txt">${esc(x.last_error)}</div>` : ""}</div>`).join("");
+  $("set-mcp").innerHTML = `${rows || `<div class="muted">No MCP servers configured.</div>`}
+    ${m.error ? `<div class="bad-txt">Config error: ${esc(m.error)}</div>` : ""}
+    <div class="muted">Edit: <code>${esc(m.path)}</code> (example: mcp_servers.example.json). Every MCP tool call asks for your approval.</div>`;
+  const scr = d.screen || {};
+  $("set-screen").disabled = !scr.available;
+  $("cmd-screen").disabled = !scr.available;
+}
+
+async function screenFlow() {
+  const ok = await ask("R3 · Read my screen",
+    "Jarvis will capture your screen once and send a downscaled image to Gemini (or OpenAI) to describe it. Close patient, bank or tax windows first. Nothing is saved.",
+    "Capture once");
+  if (!ok) return;
+  banner("Reading screen…");
+  const r = await call("screen_read", "What is on my screen?", true);
+  const out = r.ok ? r.data.description : (r.error || "screen read failed");
+  banner(r.ok ? "Screen read done" : out);
+  if ($("set-screen-out")) $("set-screen-out").textContent = out;
+  if (r.ok) {
+    $("voice-state").textContent = "Screen described";
+    await call("speak", out.slice(0, 400));
+  }
+}
+
 async function refresh() {
-  const [st, met, feed, mem, llms, agents, brief, ready] = await Promise.all([
+  const [st, met, feed, mem, llms, agents, brief, ready, sets] = await Promise.all([
     call("status"),
     call("metrics"),
     call("feed", 50),
@@ -191,7 +308,9 @@ async function refresh() {
     call("agents"),
     call("brief"),
     call("readiness"),
+    call("settings_get"),
   ]);
+  if (sets && sets.ok) renderSettings(sets.data);
   if (st.ok) renderHealth(st.data, agents.ok ? agents.data.agents : [], llms.ok ? llms.data.providers : [], mem.ok ? mem.data : null);
   else banner(st.error || "status offline");
   if (ready && ready.ok) renderReadiness(ready.data);
@@ -220,7 +339,7 @@ async function listenFlow() {
   $("voice-state").textContent = `Heard: ${r.text}`;
   banner(r.reply || "");
   if (r.reply) await call("speak", r.reply);
-  $("voice-state").textContent = "Voice idle";
+  $("voice-state").textContent = r.engine === "whisper" ? "Voice idle · offline STT" : "Voice idle";
 }
 
 function wire() {
@@ -230,6 +349,43 @@ function wire() {
   $("feed-search").oninput = () => refresh();
   $("btn-listen").onclick = listenFlow;
   $("btn-talk").onclick = listenFlow;
+  $("btn-stop-voice").onclick = async () => {
+    const r = await call("stop_speaking");
+    banner(r.ok ? (r.data?.was_speaking ? "Stopped speaking" : "") : (r.error || "stop failed"));
+  };
+  $("cmd-screen").onclick = screenFlow;
+  $("set-screen").onclick = screenFlow;
+  $("set-wake").onchange = async () => {
+    const el = $("set-wake");
+    if (el.checked) {
+      const ok = await ask("R3 · Always listen for Hey Jarvis",
+        "The microphone will stay open while Jarvis runs. \"Hey Jarvis\" is detected on this PC only; your question is then transcribed and answered. You can turn this off here any time.",
+        "Turn on");
+      if (!ok) { el.checked = false; return; }
+      const r = await call("settings_set", { wake_word: true }, true);
+      if (!r.ok) { el.checked = false; banner(r.error || "could not start wake word"); }
+      else renderSettings(r.data);
+    } else {
+      const r = await call("settings_set", { wake_word: false });
+      if (r.ok) renderSettings(r.data); else banner(r.error);
+    }
+  };
+  $("set-stt").onchange = async () => {
+    const r = await call("settings_set", { stt_engine: $("set-stt").value });
+    if (r.ok) renderSettings(r.data); else banner(r.error);
+    $("set-stt").blur();
+  };
+  $("set-voice").onchange = async () => {
+    const r = await call("settings_set", { voice: $("set-voice").value });
+    if (r.ok) renderSettings(r.data); else banner(r.error);
+    $("set-voice").blur();
+  };
+  $("set-voice-test").onclick = () => call("tts_test");
+  $("set-whisper-dl").onclick = async () => {
+    const r = await call("stt_download_model");
+    banner(r.ok ? "Downloading offline speech model…" : (r.error || "download failed"));
+    await refresh();
+  };
   $("chk-mute").onchange = async () => {
     const r = await call("mute", $("chk-mute").checked);
     if (!r.ok) banner(r.error);
