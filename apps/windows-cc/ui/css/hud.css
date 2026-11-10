@@ -77,7 +77,7 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
   height: clamp(440px, calc((100vh - 120px) * 0.68), 1100px); }
 .hero > .panel { min-height: 0; }
 .hero-side { overflow: auto; }
-.feed-scroll { font-size: 12px; overflow: auto; max-height: calc(100% - 26px); }
+.feed-scroll { font-size: 12px; overflow-y: auto; overflow-x: hidden; max-height: calc(100% - 26px); overflow-wrap: anywhere; }
 .mid { grid-template-columns: 1.2fr 1fr .9fr; }
 .bottom { grid-template-columns: 1fr 1fr 1fr; }
 .hero-core { padding: 0; overflow: hidden; position: relative; background: #02080e; }
@@ -322,6 +322,7 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 .orbit-label.st-error { opacity: 1; border-color: #ff3b3b; }
 .orbit-label.st-error .bd { background: #ff3b3b; color: #fff; }
 .orbit-label.st-done .bd { background: #3dff9a; color: #02160b; }
+.orbit-label.behind { opacity: .12; }
 .orbit-label.hov { opacity: 1; background: rgba(10,34,48,.92); }
 .orbit-label.sel { opacity: 1; border-color: #ffc35a; box-shadow: 0 0 12px rgba(255,195,90,.45); }
 .orbit-legend { position: absolute; left: 10px; bottom: 8px; display: flex; gap: 10px; color: var(--muted); }

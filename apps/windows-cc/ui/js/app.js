@@ -333,7 +333,9 @@ function renderMemory(mem) {
 }
 
 function renderLlms(providers) {
-  const live = (providers || []).find((p) => p.state === "connected");
+  // Show the provider Jarvis actually tries first (agents: Gemini -> OpenAI -> Groq).
+  const rank = (n) => { const i = ["gemini", "openai", "groq"].indexOf(String(n || "").toLowerCase()); return i < 0 ? 9 : i; };
+  const live = (providers || []).filter((p) => p.state === "connected").sort((a, b) => rank(a.name) - rank(b.name))[0];
   if ($("hud-provider")) $("hud-provider").textContent = live ? String(live.name).toUpperCase() : "OFFLINE";
   $("llm-grid").innerHTML = (providers || []).map((p) => `
     <div class="llm ${p.state}">
