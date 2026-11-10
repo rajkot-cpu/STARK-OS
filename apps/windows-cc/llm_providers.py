@@ -73,7 +73,12 @@ def _resolve_key(env_key: str, aliases: tuple[str, ...] = ()) -> str:
     return ""
 
 
+# Groq (Cloudflare) rejects the default "Python-urllib" agent with 403 / error code 1010.
+USER_AGENT = "JARVIS-CC/1.0 (+https://github.com/rajkot-cpu/STARK-OS)"
+
+
 def _http_json(url: str, headers: dict, body: dict | None, timeout: float):
+    headers = {"User-Agent": USER_AGENT, **(headers or {})}
     data = None if body is None else json.dumps(body).encode("utf-8")
     method = "GET" if body is None else "POST"
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
