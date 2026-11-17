@@ -344,6 +344,33 @@ class AgentHub:
         self._folder = {r["id"]: "" for r in ROLES}
         # Tests inject a fake: callable(root, providers, progress, on_provider) -> video_studio Deps.
         self.video_deps = None
+        # Emergency STOP (halt.py): callable returning True while STOP is active.
+        self.halted = lambda: False
+
+    def _is_halted(self) -> bool:
+        try:
+            return bool(self.halted())
+        except Exception:
+            return True  # fail closed
+
+    def stop_all(self, reason: str = "emergency stop") -> int:
+        """Emergency STOP: stop every agent, drop pending R3 requests and saved loops (queued
+        actions). Returns how many agents were running or waiting."""
+        n = 0
+        with self._lock:
+            for r in ROLES:
+                rid = r["id"]
+                busy = self._state.get(rid) == "active" or rid in self._pending or rid in self._halted
+                self._stop[rid].set()
+                self._pending.pop(rid, None)
+                self._halted.pop(rid, None)
+                self._pending_shell_cwd.pop(rid, None)
+                if busy:
+                    n += 1
+                    self._detail[rid] = "stopped"
+                    self._steps[rid].append(f"stopped: {reason}")
+                    self._state[rid] = "standby"
+        return n
 
     # ---- R3 plumbing ----
 
@@ -393,6 +420,9 @@ class AgentHub:
     def resume(self, role_id: str, result) -> bool:
         """Feed the operator-approved (or rejected) tool result back and continue the run."""
         with self._lock:
+            if self._is_halted():
+                self._halted.pop(role_id, None)
+                return False
             saved = self._halted.pop(role_id, None)
             if not saved or self._state.get(role_id) == "active":
                 return False
@@ -442,6 +472,9 @@ class AgentHub:
         with self._lock:
             if role_id not in self._state:
                 return {"ok": False, "error": "unknown role"}
+            if self._is_halted():
+                return {"ok": False, "halted": True,
+                        "error": "Emergency STOP is active. Resume Jarvis first (type RESUME)."}
             if self._state[role_id] == "active":
                 return {"ok": False, "error": f"{_role(role_id)['name']} is busy: {self._goals[role_id][:80]}",
                         "busy": True, "data": {"id": role_id, "state": "active"}}

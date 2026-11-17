@@ -444,6 +444,12 @@ class AgentTools:
             return {"ok": False, "error": str(e)}
 
     def shell(self, cmd: str, confirmed: bool = False, cwd: str = "") -> dict:
+        import halt
+
+        ctl = halt.current()
+        if ctl is not None and ctl.is_stopped():
+            return {"ok": False, "halted": True, "error": "Emergency STOP is active; no commands run",
+                    "command": cmd}
         run_dir = self.root
         cwd = str(cwd or "").strip()
         if cwd:
@@ -480,7 +486,7 @@ class AgentTools:
             else:
                 # `dir` is a cmd builtin; confirmed commands run as typed (R3).
                 run_target, use_shell = c, True
-            r = subprocess.run(
+            r = halt.run_tracked(  # STOP can kill this child process tree
                 run_target, shell=use_shell, cwd=str(run_dir), timeout=60,
                 capture_output=True, text=True,
             )
@@ -495,6 +501,8 @@ class AgentTools:
             }
         except subprocess.TimeoutExpired:
             return {"ok": False, "error": "timeout after 60s", "command": cmd}
+        except halt.HaltedError as e:
+            return {"ok": False, "halted": True, "error": str(e), "command": cmd}
         except Exception as e:
             return {"ok": False, "error": str(e), "command": cmd}
 

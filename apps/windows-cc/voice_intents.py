@@ -3,6 +3,8 @@
 match(text) -> {"intent": "agent", "role", "goal", "verb"}
              | {"intent": "stop_agent", "role"}
              | {"intent": "start_trading"} | {"intent": "stop_trading"}   (reserved, not implemented here)
+             | {"intent": "halt"}      Emergency STOP: "stop", "jarvis stop", "stop everything", ...
+             | {"intent": "resume"}    "resume" (typed only; the bridge refuses a spoken resume)
              | {"intent": "chat", "text"}
 """
 from __future__ import annotations
@@ -48,6 +50,11 @@ _START_ROLE = re.compile(
     rf"^(?:start|run|launch|ask|tell|use|get|have)\s+(?:the\s+)?({_ROLE_WORDS})(?:\s+agent)?\b[\s,:-]*(?:to\s+)?(.*)$", re.I)
 _ROLE_COLON = re.compile(rf"^({_ROLE_WORDS})(?:\s+agent)?\s*[,:-]\s*(.+)$", re.I)
 _STOP_ROLE = re.compile(rf"^(?:stop|cancel|halt|kill)\s+(?:the\s+)?({_ROLE_WORDS})(?:\s+agent)?\s*$", re.I)
+_HALT = re.compile(
+    r"^(?:emergency\s+)?(?:stop|halt|abort|freeze|shut\s*down|kill\s+switch)"
+    r"(?:\s+(?:everything|all(?:\s+(?:agents|automation|tasks))?|it\s+all|automation|jarvis|now))?"
+    r"(?:\s+now)?$|^emergency(?:\s+stop)?$|^(?:stop|halt)\s+all\s+(?:agents|tasks|work)$", re.I)
+_RESUME = re.compile(r"^resume(?:\s+(?:jarvis|everything|all|automation|work|operations))?$", re.I)
 _START_TRADING = re.compile(r"\b(?:start|begin|resume|arm)\s+(?:live\s+)?trading\b", re.I)
 _STOP_TRADING = re.compile(r"\b(?:stop|end|pause|halt|disarm)\s+(?:live\s+)?trading\b", re.I)
 
@@ -85,6 +92,10 @@ def match(text: str) -> dict:
     t = clean(raw)
     if not t:
         return {"intent": "chat", "text": raw}
+    if _HALT.match(t):
+        return {"intent": "halt"}
+    if _RESUME.match(t):
+        return {"intent": "resume"}
     if _STOP_TRADING.search(t):
         return {"intent": "stop_trading"}
     if _START_TRADING.search(t):

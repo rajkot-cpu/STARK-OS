@@ -133,8 +133,15 @@ class FFmpeg:
             args += ["-vf", ",".join(vf)]
         args += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
                  "-c:a", "aac", "-b:a", "160k", "-shortest", "-movflags", "+faststart", out_name]
-        return subprocess.Popen(args, cwd=out_dir, stdin=subprocess.PIPE, stderr=subprocess.PIPE,
-                                stdout=subprocess.DEVNULL, creationflags=_NOWIN)
+        p = subprocess.Popen(args, cwd=out_dir, stdin=subprocess.PIPE, stderr=subprocess.PIPE,
+                             stdout=subprocess.DEVNULL, creationflags=_NOWIN)
+        try:  # Emergency STOP can kill the encoder mid-render
+            import halt
+
+            halt.register_process(p)
+        except Exception:
+            pass
+        return p
 
     def thumbnail(self, video: str, at: float, dst: str) -> None:
         self.run(["-ss", f"{at:.2f}", "-i", video, "-frames:v", "1", dst])

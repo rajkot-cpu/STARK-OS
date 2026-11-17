@@ -331,6 +331,7 @@ async function runCommand(text) {
   banner(d.reply || "");
   if (d.reply) speak(d.reply);
   if (d.routed === "agent" && d.started) { lastAgentsKey = ""; await refresh(); }
+  if (d.routed === "halt" || d.routed === "resume") { if (d.routed === "halt") banner(d.reply, "err"); await refresh(); }
 }
 
 // "2026-11-11T00:52:30.067952+05:30" -> "11 Nov 00:52:30" (today: just the time).
@@ -482,6 +483,101 @@ async function screenFlow() {
   }
 }
 
+// ---- Emergency STOP / Safety page (Master Upgrade Module 1) ----
+let haltState = null;
+function renderHalt(h) {
+  if (!h) return;
+  haltState = h;
+  const on = !!h.stopped;
+  document.body.classList.toggle("halted", on);
+  const b = $("halt-banner");
+  if (b) b.classList.toggle("hidden", !on);
+  const via = { hotkey: "the hotkey", command: "a typed command", voice: "voice", stop_file: "the STOP file", button: "the STOP button" }[h.source] || h.source || "STOP";
+  const since = h.since ? new Date(h.since).toLocaleTimeString() : "";
+  const detail = on
+    ? (h.stop_file_present ? `STOP file present — delete ${h.stop_file} to allow resume.` : `Since ${since} via ${via}. Nothing restarts until you resume.`)
+    : "";
+  if ($("hb-detail")) $("hb-detail").textContent = detail;
+  if ($("hb-resume")) $("hb-resume").disabled = !h.can_resume;
+  if ($("sf-state")) {
+    $("sf-state").textContent = on ? "STANDBY — HALTED" : "ARMED — READY";
+    $("sf-state").classList.toggle("halted", on);
+  }
+  if ($("sf-since")) $("sf-since").textContent = on ? `Stopped ${since} via ${via}${h.reason ? " · " + h.reason : ""}` : "No STOP active.";
+  if ($("sf-report")) {
+    const rep = h.report || {};
+    $("sf-report").innerHTML = on && Object.keys(rep).length
+      ? Object.entries(rep).map(([k, v]) => `<div>${esc(k.replace(/_/g, " "))}: <b>${esc(v)}</b></div>`).join("")
+      : "";
+  }
+  if ($("sf-resume")) $("sf-resume").disabled = !h.can_resume;
+  if ($("sf-resume-note")) $("sf-resume-note").textContent = on && h.stop_file_present ? "Delete the STOP file first." : (on ? "" : "Nothing to resume.");
+  if ($("sf-stopfile")) $("sf-stopfile").textContent = h.stop_file || "";
+  if ($("sf-hotkey") && h.hotkey) {
+    const hk = h.hotkey.state;
+    $("sf-hotkey").textContent = hk === "active" ? "active" : hk === "failed" ? `not available (${h.hotkey.error || "in use"})` : hk;
+  }
+}
+
+function renderSafety(d) {
+  if (!d) return;
+  renderHalt(d.halt);
+  const a = d.audit || {};
+  if ($("sf-audit")) {
+    $("sf-audit").innerHTML = a.ok
+      ? `Audit log intact · ${a.chained} chained of ${a.lines} lines (${a.legacy} older unchained)`
+      : `<span class="err-text">Audit log check FAILED: ${esc((a.problems || []).map((p) => `line ${p.line}: ${p.problem}`).join("; "))}</span>`;
+  }
+  const k = d.secrets || {};
+  if ($("sf-keys")) {
+    $("sf-keys").textContent = !k.credential_manager
+      ? "Windows Credential Manager not available; keys stay in secrets\\api_keys.env."
+      : `${k.in_credential_manager} key(s) in Windows Credential Manager · ${k.plaintext_in_file} still in api_keys.env` +
+        ((k.missing_from_store || []).length ? ` · missing: ${k.missing_from_store.join(", ")}` : "");
+  }
+  if ($("sf-levels")) {
+    $("sf-levels").innerHTML = (d.levels || []).map((l) =>
+      `<div class="sf-level"><span class="tier">${esc(l.tier)}</span><b>Level ${l.level} · ${esc(l.name)}</b><div class="muted">${esc(l.rule)}</div>` +
+      `<div>${(l.actions || []).map((x) => `<code>${esc(x)}</code>`).join(" ")}</div>` +
+      ((l.not_enabled || []).length ? `<div class="muted">Not enabled in Jarvis yet: ${l.not_enabled.map(esc).join(", ")}</div>` : "") +
+      `</div>`).join("");
+  }
+}
+
+async function emergencyStop(source) {
+  const r = await call("halt_stop", source || "button");
+  if (r && r.ok) {
+    renderHalt(r.data);
+    banner("EMERGENCY STOP — all automation halted.", "err");
+  } else bannerErr(`STOP failed: ${(r && r.error) || "no response"} — use Ctrl+Alt+Shift+S or create the STOP file`);
+  refresh();
+}
+
+function resumeFlow() {
+  $("resume-err").textContent = "";
+  $("resume-input").value = "";
+  $("resume-modal").classList.remove("hidden");
+  setTimeout(() => $("resume-input").focus(), 50);
+  const close = () => $("resume-modal").classList.add("hidden");
+  const go = async () => {
+    const r = await call("halt_resume", $("resume-input").value);
+    if (r && r.ok) {
+      close();
+      renderHalt(r.data);
+      banner("Resumed. Stopped tasks were not restarted.");
+      refresh();
+    } else $("resume-err").textContent = (r && r.error) || "Could not resume";
+  };
+  $("resume-ok").onclick = go;
+  $("resume-cancel").onclick = close;
+  $("resume-input").onkeydown = (ev) => { if (ev.key === "Enter") go(); if (ev.key === "Escape") close(); };
+}
+
+async function refreshSafety() {
+  const r = await call("safety_info");
+  if (r && r.ok) renderSafety(r.data);
+}
+
 async function refresh() {
   const [st, met, feed, mem, llms, agents, brief, ready, sets] = await Promise.all([
     call("status"),
@@ -494,6 +590,9 @@ async function refresh() {
     call("readiness"),
     call("settings_get"),
   ]);
+  const hs = await call("halt_status");
+  if (hs && hs.ok) renderHalt(hs.data);
+  if ($("page-safety") && $("page-safety").classList.contains("active")) refreshSafety();
   if (sets && sets.ok) {
     renderSettings(sets.data);
     voice.ttsFlag = !!sets.data.speaking;
@@ -558,8 +657,19 @@ function wire() {
     else if ((ev.key === "f" || ev.key === "F") && !ev.ctrlKey && !ev.altKey && !ev.metaKey) setFocus(!$("page-home").classList.contains("focus"));
   });
   document.querySelectorAll("#nav button").forEach((b) => {
-    b.onclick = () => setRoute(b.dataset.route);
+    b.onclick = () => { setRoute(b.dataset.route); if (b.dataset.route === "safety") refreshSafety(); };
   });
+  $("btn-estop").onclick = () => emergencyStop("button");
+  // In-window fallback for the STOP hotkey (the global one is registered by Python).
+  document.addEventListener("keydown", (ev) => {
+    if (ev.ctrlKey && ev.altKey && ev.shiftKey && (ev.key === "S" || ev.key === "s")) {
+      if (!(haltState && haltState.hotkey && haltState.hotkey.state === "active")) { ev.preventDefault(); emergencyStop("hotkey"); }
+    }
+  }, true);
+  $("sf-stop").onclick = () => emergencyStop("button");
+  $("hb-resume").onclick = resumeFlow;
+  $("sf-resume").onclick = resumeFlow;
+  $("sf-verify").onclick = refreshSafety;
   $("feed-search").oninput = () => refresh();
   $("btn-listen").onclick = listenFlow;
   $("btn-talk").onclick = listenFlow;

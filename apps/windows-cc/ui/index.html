@@ -18,6 +18,9 @@
         <span id="sys-pill" class="pill">…</span>
       </div>
       <div id="clock" class="clock">—</div>
+      <button id="btn-estop" class="estop" title="Emergency STOP — halts all agents and automation (also Ctrl+Alt+Shift+S, typing &quot;stop&quot;, or a STOP file)">
+        <span class="estop-dot"></span><span class="estop-label">EMERGENCY STOP</span><span class="estop-key">Ctrl+Alt+Shift+S</span>
+      </button>
       <div class="top-right">
         <input id="feed-search" type="search" placeholder="Search feed…" />
         <span class="operator">Operator · Chandan</span>
@@ -36,6 +39,7 @@
         <button data-route="knowledge">Knowledge Base</button>
         <button data-route="skills">Tools &amp; Skills</button>
         <button data-route="workflows">Workflows</button>
+        <button data-route="safety" class="nav-safety">Safety &amp; STOP</button>
         <button data-route="settings">Settings</button>
       </nav>
       <div class="voice-side">
@@ -48,6 +52,10 @@
     </aside>
 
     <main id="main">
+      <div id="halt-banner" class="halt-banner hidden" role="alert">
+        <div class="hb-text"><strong>EMERGENCY STANDBY</strong> — all automation is halted. <span id="hb-detail"></span></div>
+        <button id="hb-resume" class="hb-resume">Manual Override · Resume…</button>
+      </div>
       <!-- HOME -->
       <section id="page-home" class="page active">
         <form id="cmd-bar" class="cmd-bar panel" autocomplete="off">
@@ -155,6 +163,43 @@
       <section id="page-knowledge" class="page"><h2>Knowledge Base</h2><div id="knowledge-page"></div></section>
       <section id="page-skills" class="page"><h2>Tools &amp; Skills</h2><div id="skills-page"></div></section>
       <section id="page-workflows" class="page"><h2>Workflows</h2><div id="workflows-page"></div></section>
+      <section id="page-safety" class="page"><h2>Safety &amp; Emergency STOP</h2>
+        <p class="muted small">Module 1 of the Master Upgrade. STOP halts every agent, queued approval, shell command, video render, wake word and speech. Nothing restarts on its own — only you can resume, by typing RESUME.</p>
+        <div class="safety-grid">
+          <div class="safety-card sc-shutdown">
+            <div class="sc-title">SHUTDOWN SEQUENCE</div>
+            <div class="sc-sub">Stop all automation now</div>
+            <button id="sf-stop" class="sc-btn sc-red">INITIATE STOP</button>
+            <ul class="sc-ways small">
+              <li>Global hotkey <code>Ctrl+Alt+Shift+S</code> — <span id="sf-hotkey">…</span></li>
+              <li>Type or say <code>stop</code> / <code>Jarvis stop</code></li>
+              <li>Create a file named <code>STOP</code>: <code id="sf-stopfile">…</code></li>
+              <li>The red EMERGENCY STOP button (top bar)</li>
+            </ul>
+          </div>
+          <div class="safety-card sc-standby">
+            <div class="sc-title">EMERGENCY STANDBY</div>
+            <div id="sf-state" class="sc-state">…</div>
+            <div id="sf-since" class="small muted"></div>
+            <div id="sf-report" class="small"></div>
+          </div>
+          <div class="safety-card sc-override">
+            <div class="sc-title">MANUAL OVERRIDE</div>
+            <div class="sc-sub">Resume needs you: delete any STOP file, then type RESUME</div>
+            <button id="sf-resume" class="sc-btn sc-cyan">RESUME…</button>
+            <div id="sf-resume-note" class="small muted"></div>
+          </div>
+          <div class="safety-card sc-reset">
+            <div class="sc-title">INTEGRITY CHECK</div>
+            <div class="sc-sub">Hash-chained audit log + key storage</div>
+            <div id="sf-audit" class="small">…</div>
+            <div id="sf-keys" class="small">…</div>
+            <button id="sf-verify" class="sc-btn">RE-CHECK</button>
+          </div>
+        </div>
+        <h3 class="gold">Permission levels</h3>
+        <div id="sf-levels" class="sf-levels small"></div>
+      </section>
       <section id="page-settings" class="page"><h2>Settings</h2>
         <div class="settings-grid">
           <div class="panel">
@@ -214,6 +259,19 @@
       <div class="modal-actions">
         <button id="ask-cancel">Cancel</button>
         <button id="ask-ok" class="danger">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="resume-modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <h3 class="gold">Manual Override — Resume Jarvis</h3>
+      <p>Stopped tasks will <strong>not</strong> restart. Type <code>RESUME</code> to allow new work again.</p>
+      <input id="resume-input" type="text" autocomplete="off" spellcheck="false" placeholder="Type RESUME" />
+      <div id="resume-err" class="small err-text"></div>
+      <div class="modal-actions">
+        <button id="resume-cancel">Cancel</button>
+        <button id="resume-ok" class="danger">Resume</button>
       </div>
     </div>
   </div>

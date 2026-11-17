@@ -31,7 +31,12 @@ DEFAULTS: dict = {
     "stt_engine": "auto",
     "whisper_model": "tiny.en",
     "voice": "en-IN-PrabhatNeural",
+    # Emergency STOP triggers (Module 1A). Config-file only: settings_set() from the UI ignores
+    # these, so a STOP trigger can't be switched off by a click or an agent.
+    "stop_hotkey": True,
+    "stop_file_watch": True,
 }
+FILE_ONLY_KEYS = ("stop_hotkey", "stop_file_watch")
 
 
 def settings_path(root: Path | str) -> Path:
@@ -54,6 +59,8 @@ def load(root: Path | str) -> dict:
 def _validated(s: dict) -> dict:
     out = dict(DEFAULTS)
     out["wake_word"] = bool(s.get("wake_word") is True)
+    for k in FILE_ONLY_KEYS:
+        out[k] = s.get(k) is not False
     if s.get("stt_engine") in {e["id"] for e in STT_ENGINES}:
         out["stt_engine"] = s["stt_engine"]
     if s.get("whisper_model") in WHISPER_MODELS:
@@ -79,10 +86,12 @@ def save(root: Path | str, updates: dict) -> dict:
 
 
 def audit(root: Path | str, task: str, action: str, result: str, undo: str = "") -> None:
-    """Append one line to logs/audit.jsonl (same shape as the rest of Jarvis)."""
+    """Append one hash-chained line to logs/audit.jsonl (same fields as the rest of Jarvis
+    plus prev/hash; see audit_chain.py). Never raises."""
     try:
+        import audit_chain
+
         p = Path(root) / "logs" / "audit.jsonl"
-        p.parent.mkdir(parents=True, exist_ok=True)
         line = {
             "time": datetime.now(_IST).isoformat(timespec="seconds"),
             "task": task,
@@ -90,7 +99,7 @@ def audit(root: Path | str, task: str, action: str, result: str, undo: str = "")
             "result": str(result)[:300],
             "undo": undo,
         }
-        with _lock, p.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(line, ensure_ascii=False) + "\n")
+        with _lock:
+            audit_chain.append(p, line)
     except Exception:
         pass
