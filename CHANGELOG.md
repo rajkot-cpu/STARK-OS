@@ -1,6 +1,7 @@
 # Changelog
 
 ## v3.1.0 — 2026-11-18 — Phase 3: working AI
+- Keys & brokers: added Finnhub, Alpha Vantage, Zerodha Kite, Alpaca (paper), Binance slots with read-only **Test** checks (idea from v8 api_hub_manager; keys only in Credential Manager, no orders).
 - Local AI: Ollama `jarvis-local` (qwen2.5:3b, CPU) in a hybrid router (cloud first, local fallback/offline; cheap tasks local first) for chat, agents and chains.
 - Local HTTP API on 127.0.0.1:8765 (token in Credential Manager `JARVIS/JARVIS_API_TOKEN`, blocked during STOP, no resume/order endpoints).
 - Settings: Keys & brokers (any JARVIS_* key, Sahi/other broker slots → Credential Manager), Local AI routing + test, Local API panel.

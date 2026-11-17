@@ -328,7 +328,7 @@ export function renderSettingsP3(host) {
       <div class="tr-order"><select id="key-slot"></select><input id="key-custom" placeholder="JARVIS_MYSERVICE_API_KEY" maxlength="70" style="display:none"/>
       <input id="key-val" type="password" placeholder="Paste key (never shown again)" autocomplete="off"/><button class="set-btn" data-act="key-save">Save</button></div>
       <div id="key-msg" class="small"></div><div id="key-list"></div>
-      <p class="muted small">Saved straight to Windows Credential Manager (<code>JARVIS/&lt;NAME&gt;</code>). Jarvis shows only whether a key is set — never its value.</p></div>
+      <p class="muted small">Saved straight to Windows Credential Manager (<code>JARVIS/&lt;NAME&gt;</code>). Jarvis shows only whether a key is set — never its value. <b>Test</b> is a read-only check (account/profile/quote); it never places or tests an order. Broker keys do not enable live trading.</p></div>
     <div class="panel" id="p3-local"><h3>Local AI (Ollama)</h3><div id="lai-status" class="small"></div>
       <label class="set-row">Routing <select id="lai-mode"><option value="hybrid">Hybrid — cloud first, local fallback/offline</option><option value="local_first">Local first — then cloud</option><option value="cloud_only">Cloud only</option></select></label>
       <button class="set-btn" data-act="lai-test">Test local model</button><div id="lai-out" class="small"></div></div>
@@ -354,7 +354,7 @@ async function loadKeys() {
     sel.dataset.filled = "1";
     sel.innerHTML = keys.filter((k) => !k.custom).map((k) => `<option value="${esc(k.name)}">${esc(k.group)} — ${esc(k.label)}</option>`).join("") + `<option value="__custom">Custom name…</option>`;
   }
-  list.innerHTML = table(["Key", "Status", ""], keys.map((k) => [`${esc(k.label)}<div class="muted small">${esc(k.name)}${k.used ? "" : " · stored only"}</div>`, k.set ? `<span class="pos">set</span> <span class="muted small">${esc(k.where)}</span>` : `<span class="muted">not set</span>`, k.set && k.where === "credential_manager" ? `<button class="set-btn" data-act="key-del" data-name="${esc(k.name)}">Remove</button>` : ""]));
+  list.innerHTML = table(["Key", "Status", ""], keys.map((k) => [`${esc(k.label)}<div class="muted small">${esc(k.name)}${k.used ? "" : " · stored only"}</div>`, k.set ? `<span class="pos">set</span> <span class="muted small">${esc(k.where)}</span>` : `<span class="muted">not set</span>`, `${k.test && k.set ? `<button class="set-btn" data-act="key-test" data-test="${esc(k.test)}">Test</button> ` : ""}${k.set && k.where === "credential_manager" ? `<button class="set-btn" data-act="key-del" data-name="${esc(k.name)}">Remove</button>` : ""}`]));
 }
 
 async function loadLocalAi() {
@@ -395,6 +395,11 @@ async function onSettingsClick(e) {
     if (!window.confirm(`Remove ${b.dataset.name} from Credential Manager?`)) return;
     await call("key_delete", b.dataset.name, true);
     loadKeys();
+  } else if (act === "key-test") {
+    $("key-msg").textContent = `Testing ${b.dataset.test} (read-only)…`;
+    const r = await call("key_test", b.dataset.test);
+    const d = r.ok ? r.data : { ok: false, status: "error", detail: r.error };
+    $("key-msg").innerHTML = `<b>${esc(b.dataset.test)}</b>: <span class="${d.ok ? "pos" : "tr-err"}">${esc(d.status)}</span>${d.latency_ms !== undefined ? ` · ${d.latency_ms} ms` : ""} · ${esc(d.detail || "")}`;
   } else if (act === "lai-test") {
     $("lai-out").textContent = "Asking the local model… (CPU, ~5–20 s)";
     const r = await call("local_ai_test", "");

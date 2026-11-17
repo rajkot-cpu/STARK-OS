@@ -205,6 +205,20 @@ class Phase3Mixin:
         except Exception as e:
             return _err(e)
 
+    def key_test(self, provider: str = "") -> dict:
+        """Read-only connection check for a provider key (never places or tests orders)."""
+        if self._stopped():
+            return HALTED
+        try:
+            import cc_settings
+            import provider_tests
+
+            r = provider_tests.run(str(provider or ""), self.root)
+            cc_settings.audit(self.root, "keys", "key_test", f"{provider}: {r.get('status')}")
+            return {"ok": True, "data": r}
+        except Exception as e:
+            return _err(e)
+
     def key_delete(self, name: str = "", confirmed: bool = False) -> dict:
         try:
             import keys_manager

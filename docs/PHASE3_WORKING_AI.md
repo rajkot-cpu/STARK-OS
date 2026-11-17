@@ -52,7 +52,7 @@ $t = & "C:\Program Files\Python313\python.exe" -c "import sys; sys.path.insert(0
 Invoke-RestMethod http://127.0.0.1:8765/v1/status -Headers @{Authorization = "Bearer $t"}
 ```
 
-## v7 bundle review (`Jarvis_Complete_Native_System_Windows_v7.zip`)
+## v7/v8 bundle review (`Jarvis_Complete_Native_System_Windows_v7.zip`, then v8 as source of truth)
 No hardcoded secrets found (`.env.example` only).
 
 | File | Verdict | Why |
@@ -69,7 +69,20 @@ No hardcoded secrets found (`.env.example` only).
 | jarvis_trading_desktop.py | **REJECT** | Tk calculator UI with presets; duplicates the HUD. |
 | jarvis_command_center_live.html | **REJECT** | Separate Tailwind UI with a CDP "Chrome trading tab" and a kill-switch unlock phrase. Duplicates v3 HUD. |
 | Build/Launch .bat | **REJECT** | Unpinned `pip install … MetaTrader5`. Our `build_exe.ps1` is the build. |
-| test_jarvis_safety_suite.py | reference only | 15 tests for the v7 modules. Our `tests/test_phase3.py` covers the adapted code. |
+| test_jarvis_safety_suite.py | reference only | 15 tests (v7) / 17 (v8, + api hub). Our `tests/test_phase3.py` covers the adapted code. |
+
+### v8 `api_hub_manager.py` (new in v8 — the "API function")
+
+| Piece | Verdict | Why |
+|---|---|---|
+| Provider catalog (Gemini, Binance, Kite, Alpaca, Finnhub, Alpha Vantage, custom URL/token) | **adapt** | Added as slots in Settings → Keys & brokers (`keys_manager.SLOTS`), stored only in Credential Manager as `JARVIS/JARVIS_*`. |
+| "Test connection" per provider | **adapt** | `provider_tests.py`: fixed read-only GETs (Kite profile, Binance account, Alpaca paper account, Finnhub/Alpha Vantage quote, AI models list). Returns status/latency only. |
+| Saving keys to plaintext `.env`, first4…last4 masks | reject | Plaintext secrets on disk; masks leak part of a key. We show only set/not set. |
+| `REFERENCE_MARKET_PRICES` fallback labelled as an API feed, hardcoded change %, synthetic SL/TP/spread | reject | Fake data shown as real. Jarvis shows "not connected" instead. |
+| `api_place_broker_order` (real Kite `POST /orders/regular`, Alpaca, webhook) gated only by kill switch + R:R ≥ 2 | reject | Live orders with no human confirmation. Brokers kite/alpaca/binance are listed in `broker_live.BROKERS` with no adapter (fail-closed, typed R4 CONFIRM required). |
+| Free-form custom REST tester (any URL, GET/POST) | reject | SSRF-style risk from the UI/HTTP. Custom URL/token can be stored, not called. |
+| Gemini key in the URL query | reject | Keys leak into logs/proxies; we send it in the `x-goog-api-key` header. |
+| `/api/api_hub` HTTP routes for saving keys / placing orders | reject | Our local API cannot set keys or place orders; keys are set in-app only. |
 
 **Overlap with the PC's untracked `apps/windows-cc/upgrade_core/` (15 Nov, left untouched):**
 - It has its own `local_models`, `memory` (SQLite), `tasking` (SQLite queue), `orchestration` (planner only) and `paper_trading`.
