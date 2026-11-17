@@ -283,6 +283,37 @@ class KeysTests(unittest.TestCase):
             os.environ.pop("JARVIS_MYDATA_API_KEY", None)
 
 
+class ProviderTestTests(unittest.TestCase):
+    def test_read_only_endpoints_and_no_key_leak(self):
+        import provider_tests
+
+        seen = []
+
+        def fake_get(url, headers, timeout=8.0):
+            seen.append((url, dict(headers)))
+            return 200, {"status": "success", "balances": [], "c": 1.0}, 12.0
+
+        env = {"JARVIS_BROKER_KITE_API_KEY": "kiteKEY123", "JARVIS_BROKER_KITE_ACCESS_TOKEN": "kiteTOK456",
+               "JARVIS_BROKER_BINANCE_API_KEY": "binKEY789", "JARVIS_BROKER_BINANCE_API_SECRET": "binSEC000",
+               "JARVIS_FINNHUB_API_KEY": "fhKEY111"}
+        with mock.patch.dict(os.environ, env), mock.patch("llm_providers.load_secrets"):
+            for p in ("kite", "binance", "finnhub"):
+                r = provider_tests.run(p, get=fake_get)
+                self.assertTrue(r["ok"], r)
+                self.assertNotIn("KEY", json.dumps(r))
+        urls = [u for u, _ in seen]
+        self.assertTrue(all("order" not in u for u in urls))
+        self.assertIn("https://api.kite.trade/user/profile", urls)
+        self.assertTrue(any(u.startswith("https://api.binance.com/api/v3/account?") for u in urls))
+        self.assertFalse(provider_tests.run("custom")["ok"])
+
+    def test_missing_keys(self):
+        import provider_tests
+
+        with mock.patch.dict(os.environ, {"JARVIS_BROKER_ALPACA_API_KEY": ""}), mock.patch("llm_providers.load_secrets"):
+            self.assertEqual(provider_tests.run("alpaca", get=lambda *a, **k: (200, {}, 1))["status"], "missing_key")
+
+
 class _FakeBridge:
     def __init__(self):
         self.halted = False

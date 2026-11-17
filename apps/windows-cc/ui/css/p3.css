@@ -37,7 +37,7 @@
 #tasks-p3 .panel, #mem-search .panel { margin-bottom: 12px; }
 #api-eps .tr-tab td { color: #9fc4e0; }
 #p3-keys { grid-column: 1 / -1; }
-#p3-keys .tr-tab td:last-child { text-align: right; width: 90px; }
+#p3-keys .tr-tab td:last-child { text-align: right; width: 160px; white-space: nowrap; }
 #p3-keys .tr-tab td { vertical-align: middle; }
 #p3-local, #p3-api { min-width: 0; }
 #p3-api code, #p3-api .muted { overflow-wrap: anywhere; }

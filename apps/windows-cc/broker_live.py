@@ -10,13 +10,17 @@ Gates, all required, checked in this order on every single order:
   4. the operator typed exactly "R4 CONFIRM" for this order;
   5. a broker adapter is implemented and its key is in Credential Manager.
 No adapter is implemented in this build (Sahi or any other), so step 5 always refuses and
-nothing is ever sent to a broker. The v7 bundle's browser-DOM order injection was rejected.
+nothing is ever sent to a broker. Rejected from the v7/v8 bundles: browser-DOM order
+injection, and v8 api_hub_manager's direct Kite/Alpaca/webhook order POSTs (R:R gate only, no human confirm).
 """
 from __future__ import annotations
 
 CONFIRM_PHRASE = "R4 CONFIRM"
 BROKERS = {
     "sahi": {"label": "Sahi", "keys": ("JARVIS_BROKER_SAHI_API_KEY", "JARVIS_BROKER_SAHI_API_SECRET"), "adapter": None},
+    "kite": {"label": "Zerodha Kite", "keys": ("JARVIS_BROKER_KITE_API_KEY", "JARVIS_BROKER_KITE_ACCESS_TOKEN"), "adapter": None},
+    "alpaca": {"label": "Alpaca (paper)", "keys": ("JARVIS_BROKER_ALPACA_API_KEY", "JARVIS_BROKER_ALPACA_SECRET_KEY"), "adapter": None},
+    "binance": {"label": "Binance", "keys": ("JARVIS_BROKER_BINANCE_API_KEY", "JARVIS_BROKER_BINANCE_API_SECRET"), "adapter": None},
     "other": {"label": "Other broker", "keys": ("JARVIS_BROKER_OTHER_API_KEY", "JARVIS_BROKER_OTHER_API_SECRET"), "adapter": None},
 }
 

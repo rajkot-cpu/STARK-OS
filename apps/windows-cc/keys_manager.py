@@ -16,16 +16,25 @@ import secrets_store
 
 NAME_RE = re.compile(r"^JARVIS_[A-Z0-9_]{2,60}$")
 RESERVED = {"JARVIS_API_TOKEN"}  # managed by the local API (rotate only)
+# "test" names a read-only connection check in provider_tests.py (never an order).
 SLOTS = (
-    {"name": "JARVIS_GEMINI_API_KEY", "label": "Google Gemini", "group": "AI provider", "used": True},
-    {"name": "JARVIS_OPENAI_API_KEY", "label": "OpenAI", "group": "AI provider", "used": True},
-    {"name": "JARVIS_GROQ_API_KEY", "label": "Groq", "group": "AI provider", "used": True},
-    {"name": "JARVIS_ANTHROPIC_API_KEY", "label": "Anthropic", "group": "AI provider", "used": False},
-    {"name": "JARVIS_OPENROUTER_API_KEY", "label": "OpenRouter", "group": "AI provider", "used": False},
-    {"name": "JARVIS_BROKER_SAHI_API_KEY", "label": "Sahi — API key", "group": "Broker", "used": False},
-    {"name": "JARVIS_BROKER_SAHI_API_SECRET", "label": "Sahi — API secret", "group": "Broker", "used": False},
-    {"name": "JARVIS_BROKER_OTHER_API_KEY", "label": "Other broker — API key", "group": "Broker", "used": False},
-    {"name": "JARVIS_BROKER_OTHER_API_SECRET", "label": "Other broker — API secret", "group": "Broker", "used": False},
+    {"name": "JARVIS_GEMINI_API_KEY", "label": "Google Gemini", "group": "AI provider", "used": True, "test": "gemini"},
+    {"name": "JARVIS_OPENAI_API_KEY", "label": "OpenAI", "group": "AI provider", "used": True, "test": "openai"},
+    {"name": "JARVIS_GROQ_API_KEY", "label": "Groq", "group": "AI provider", "used": True, "test": "groq"},
+    {"name": "JARVIS_ANTHROPIC_API_KEY", "label": "Anthropic", "group": "AI provider", "used": False, "test": "anthropic"},
+    {"name": "JARVIS_OPENROUTER_API_KEY", "label": "OpenRouter", "group": "AI provider", "used": False, "test": ""},
+    {"name": "JARVIS_FINNHUB_API_KEY", "label": "Finnhub", "group": "Market data", "used": False, "test": "finnhub"},
+    {"name": "JARVIS_ALPHAVANTAGE_API_KEY", "label": "Alpha Vantage", "group": "Market data", "used": False, "test": "alphavantage"},
+    {"name": "JARVIS_BROKER_SAHI_API_KEY", "label": "Sahi — API key", "group": "Broker", "used": False, "test": ""},
+    {"name": "JARVIS_BROKER_SAHI_API_SECRET", "label": "Sahi — API secret", "group": "Broker", "used": False, "test": ""},
+    {"name": "JARVIS_BROKER_KITE_API_KEY", "label": "Zerodha Kite — API key", "group": "Broker", "used": False, "test": "kite"},
+    {"name": "JARVIS_BROKER_KITE_ACCESS_TOKEN", "label": "Zerodha Kite — access token", "group": "Broker", "used": False, "test": "kite"},
+    {"name": "JARVIS_BROKER_ALPACA_API_KEY", "label": "Alpaca (paper) — key ID", "group": "Broker", "used": False, "test": "alpaca"},
+    {"name": "JARVIS_BROKER_ALPACA_SECRET_KEY", "label": "Alpaca (paper) — secret", "group": "Broker", "used": False, "test": "alpaca"},
+    {"name": "JARVIS_BROKER_BINANCE_API_KEY", "label": "Binance — API key", "group": "Broker", "used": False, "test": "binance"},
+    {"name": "JARVIS_BROKER_BINANCE_API_SECRET", "label": "Binance — API secret", "group": "Broker", "used": False, "test": "binance"},
+    {"name": "JARVIS_BROKER_OTHER_API_KEY", "label": "Other broker — API key", "group": "Broker", "used": False, "test": ""},
+    {"name": "JARVIS_BROKER_OTHER_API_SECRET", "label": "Other broker — API secret", "group": "Broker", "used": False, "test": ""},
 )
 
 
@@ -80,7 +89,7 @@ def status(root) -> dict:
             continue
         w = where(n, root)
         rows.append({"name": n, "label": n.replace("JARVIS_", "").replace("_", " ").title(), "group": "Custom",
-                     "used": False, "set": bool(w), "where": w, "custom": True})
+                     "used": False, "test": "", "set": bool(w), "where": w, "custom": True})
     return {"credential_manager": secrets_store.available(), "keys": rows}
 
 
