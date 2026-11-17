@@ -102,6 +102,11 @@ def reply(user_text: str, root: Path | None = None) -> dict:
     okey = _resolve_key("JARVIS_OPENAI_API_KEY", ("OPENAI_API_KEY",))
     qkey = _resolve_key("JARVIS_GROQ_API_KEY", ("GROQ_API_KEY",))
     errors = []
+    mode, model = _local_cfg(root)
+    if mode == "local_first":
+        r = _local_reply(text, model, errors)
+        if r:
+            return r
     if gkey:
         try:
             answer = _gemini_reply(text, gkey)
@@ -120,6 +125,37 @@ def reply(user_text: str, root: Path | None = None) -> dict:
             return {"ok": True, "data": {"reply": answer, "heard": text, "provider": "groq"}}
         except Exception as e:
             errors.append(f"groq: {e}")
-    if not gkey and not okey and not qkey:
-        return {"ok": False, "error": "No LLM key — add Gemini, OpenAI or Groq in secrets/api_keys.env"}
+    if mode == "hybrid":  # cloud failed or no keys: local model keeps Jarvis talking offline
+        r = _local_reply(text, model, errors)
+        if r:
+            return r
+    if not gkey and not okey and not qkey and not errors:
+        return {"ok": False, "error": "No LLM key — add Gemini, OpenAI or Groq in Settings, or pull a local model in Ollama"}
+    if not gkey and not okey and not qkey and all(e.startswith("ollama") for e in errors):
+        return {"ok": False, "error": "No LLM key — add Gemini, OpenAI or Groq in Settings; " + "; ".join(errors)}
     return {"ok": False, "error": "; ".join(errors) or "chat failed"}
+
+
+def _local_cfg(root) -> tuple[str, str]:
+    try:
+        import cc_settings
+
+        s = cc_settings.load(root or Path("."))
+        return s.get("ai_mode", "hybrid"), s.get("local_model", "")
+    except Exception:
+        return "hybrid", ""
+
+
+def _local_reply(text: str, model: str, errors: list) -> dict | None:
+    try:
+        import local_llm
+
+        if not local_llm.ready(model):
+            errors.append("ollama: not ready")
+            return None
+        r = local_llm.chat([{"role": "user", "content": text}], model=model, system=SYSTEM,
+                           max_tokens=160, temperature=0.6, timeout=120)
+        return {"ok": True, "data": {"reply": r["text"][:400], "heard": text, "provider": f"ollama:{r['model']}"}}
+    except Exception as e:
+        errors.append(f"ollama: {e}")
+        return None

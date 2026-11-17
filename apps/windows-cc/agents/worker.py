@@ -18,7 +18,7 @@ MODEL = "gemini-3.1-flash-lite-preview"
 OPENAI_MODEL = "gpt-4o-mini"
 MAX_OUT_TOKENS = 4096
 DEFAULT_VIDEO_GOAL = "Make a 3D short on today's trend in India"
-PROVIDER_LABEL = {"gemini": "Gemini", "openai": "OpenAI", "groq": "Groq"}
+PROVIDER_LABEL = {"gemini": "Gemini", "openai": "OpenAI", "groq": "Groq", "ollama": "Local AI (Ollama)"}
 
 
 def _role(role_id: str) -> dict | None:
@@ -182,6 +182,11 @@ def _openai_turn(system: str, messages: list, tools: list, key: str, *,
     """One chat.completions tool-calling turn (OpenAI or an OpenAI-compatible API)."""
     if provider == "groq":
         url, model = "https://api.groq.com/openai/v1/chat/completions", groq_model()
+    elif provider == "ollama":  # Ollama's OpenAI-compatible endpoint on loopback; key is the model name
+        import local_llm
+
+        url, model = local_llm.base_url() + "/v1/chat/completions", key
+        timeout = max(timeout, 240.0)
     else:
         url, model = "https://api.openai.com/v1/chat/completions", OPENAI_MODEL
     body: dict = {
@@ -546,7 +551,26 @@ class AgentHub:
                 key = _resolve_key(*_KEY_ENV[name])
             if key:
                 out.append((name, key))
+        if self._gemini_key_override is None and not self._key_overrides:
+            local = self._local_provider()
+            if local:
+                mode = local[2]
+                out = [local[:2]] + out if mode == "local_first" else out + [local[:2]]
         return out
+
+    def _local_provider(self):
+        """("ollama", <model>, mode) when hybrid/local_first and a local model is installed."""
+        try:
+            import cc_settings
+            import local_llm
+
+            s = cc_settings.load(self.root)
+            if s.get("ai_mode") == "cloud_only":
+                return None
+            m = local_llm.resolve_model(s.get("local_model", ""))
+            return ("ollama", m, s.get("ai_mode")) if m else None
+        except Exception:
+            return None
 
     def _llm_turn(self, role_id, providers, idx, system, history, declarations):
         notes = []
@@ -713,7 +737,7 @@ class AgentHub:
 
         try:
             factory = self.video_deps or default_deps
-            deps = factory(self.root, providers, progress=progress, on_provider=on_provider)
+            deps = factory(self.root, [p for p in providers if p[0] != "ollama"], progress=progress, on_provider=on_provider)
             if not self._goals[role_id]:
                 self._goals[role_id] = DEFAULT_VIDEO_GOAL
             res = run_job(self.root, self._goals[role_id], deps, progress=progress,

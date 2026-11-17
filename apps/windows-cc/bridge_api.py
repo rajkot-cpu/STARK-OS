@@ -644,7 +644,8 @@ class BridgeApi:
         try:
             import cc_settings
 
-            updates = {k: v for k, v in dict(updates or {}).items() if k not in cc_settings.FILE_ONLY_KEYS}
+            updates = {k: v for k, v in dict(updates or {}).items()
+                       if k not in cc_settings.FILE_ONLY_KEYS and k not in cc_settings.FILE_ONLY_OFF_KEYS}
             cur = cc_settings.load(self.root)
             want_wake = updates.pop("wake_word", None)
             if want_wake is True and not cur["wake_word"]:
