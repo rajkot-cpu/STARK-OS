@@ -615,7 +615,12 @@ class BrowserController:
         if blocked_reason(t["url"], self.root):
             raise BrowserError(blocked_reason(t["url"], self.root))
         vw = self._eval(t["id"], "JSON.stringify({w: innerWidth, h: innerHeight})") or {}
-        r = self._cdp(t["id"], [("Page.captureScreenshot", {"format": "jpeg", "quality": int(quality)})])[0]
+        try:
+            r = self._cdp(t["id"], [("Page.captureScreenshot", {"format": "jpeg", "quality": int(quality)})])[0]
+        except BrowserError:
+            # Background tabs can't be captured: show the active tab once, then retry.
+            r = self._cdp(t["id"], [("Page.bringToFront", {}),
+                                    ("Page.captureScreenshot", {"format": "jpeg", "quality": int(quality)})])[1]
         return {"ok": True, "data": {"jpeg_b64": r.get("data", ""), "css_w": vw.get("w"), "css_h": vw.get("h"),
                                      "url": t["url"], "title": t["title"]}}
 
