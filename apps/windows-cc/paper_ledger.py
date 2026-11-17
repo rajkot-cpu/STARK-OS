@@ -8,6 +8,7 @@ client_order_id and a fill record per order. Fills use the last price from marke
 from __future__ import annotations
 
 import sqlite3
+from contextlib import contextmanager
 import threading
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -35,10 +36,19 @@ class PaperLedger:
             c.execute("CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT NOT NULL)")
             c.execute("INSERT OR IGNORE INTO meta(k, v) VALUES ('start_cash', ?)", (str(START_CASH),))
 
+    @contextmanager
     def _conn(self):
+        """Commit and CLOSE every connection (an unclosed handle locks the file on Windows)."""
         c = sqlite3.connect(str(self.path), timeout=10)
         c.row_factory = sqlite3.Row
-        return c
+        try:
+            yield c
+            c.commit()
+        except BaseException:
+            c.rollback()
+            raise
+        finally:
+            c.close()
 
     def place(self, symbol: str, side: str, qty: float, price: float, *, price_time: int = 0, source: str = "",
               origin: str = "manual", client_order_id: str = "", note: str = "") -> dict:
