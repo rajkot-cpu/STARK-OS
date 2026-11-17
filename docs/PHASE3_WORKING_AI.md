@@ -116,3 +116,29 @@ the task records `engines`, `search_tried` and `cited`. Tasks page → **View re
 
 LLM routing: a provider that returns HTTP 429 is skipped for 120 s, so Gemini rate limits fall through to
 OpenAI/Groq and then local Ollama immediately.
+
+
+## Phase 3c — Browser tab (3.2.0)
+
+Jarvis launches **Microsoft Edge** (Chrome as fallback) with its own persistent profile
+`<jarvis>\browser-profile` (logins/cookies survive restarts) and DevTools on a random loopback port
+(read from `DevToolsActivePort`), and drives it with a built-in WebSocket client (`browser_cdp.py`, no new packages).
+Embedding Google in the Jarvis window is not possible (sites refuse iframes), so the **Browser** tab shows a
+live view (screenshot every 1.5 s) with address bar, tabs, back/forward/reload, click-through, wheel scroll,
+"type into focused field", and **Ask Jarvis about this page** (hybrid LLM router; page text marked untrusted).
+
+Agent tools (Browser agent): `browser_open`, `browser_read`, `browser_click`, `browser_type`, `browser_scroll`,
+`browser_screenshot`.
+
+| Rule | Where enforced |
+|---|---|
+| Never types into password/OTP/PIN/card/CVV/Aadhaar fields (checked on the element and on the focused element) | `BrowserController.type`, `user_text` |
+| Read = R1, typing = R2, Enter in a search box = R1 | controller |
+| Clicks that submit a non-search form or say buy/pay/send/post/delete/… and Enter in non-search forms = **R3** (`needs_r3`, approved only in-app via the agent card) | `click_risk`, `tool_confirm` |
+| Banking / broker / patient domains blocked for automation (built-in list + `config/browser_blocklist.txt` + optional `restricted_domains:` in POLICY.yaml — POLICY currently has none; not edited) | `blocked_reason` |
+| Emergency STOP blocks every browser call (window left open) | `_guard`, halt hook `browser` |
+| Cookies never read/exported/logged: DevTools method allowlist excludes `Network.*`/`Storage.*`; page reads never include form values | `ALLOWED_METHODS`, `_JS_SCAN` |
+| The local HTTP API has no browser endpoints | `jarvis_api.py` unchanged |
+
+Note: while the browser runs, any local process on this PC could connect to its loopback DevTools port
+(same trust level as reading the profile folder). Close the Edge window to end it.

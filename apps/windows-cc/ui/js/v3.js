@@ -39,7 +39,7 @@ export function icon(name, cls = "") {
 }
 const NAV_IC = { home: ["grid", "#38d4ff"], core: ["core", "#38d4ff"], agents: ["agents", "#19e6c1"], tasks: ["check", "#3dff9a"],
   calendar: ["calendar", "#5b8cff"], memory: ["brain", "#a77bff"], conversations: ["doc", "#38d4ff"], knowledge: ["database", "#ffd23f"],
-  skills: ["sliders", "#ff9d2e"], workflows: ["flow", "#4f8bff"], security: ["shield", "#38d4ff"], trading: ["chart", "#3dff9a"],
+  skills: ["sliders", "#ff9d2e"], workflows: ["flow", "#4f8bff"], security: ["shield", "#38d4ff"], browser: ["globe", "#4f8bff"], trading: ["chart", "#3dff9a"],
   safety: ["stop", "#ff3b30"], settings: ["settings", "#7a8fa8"] };
 export function mountNavSvg(nav) {
   if (!nav) return;

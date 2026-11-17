@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2.0 — 2026-11-18 — Phase 3c: Browser tab
+- Browser tab + Browser agent tools driving Edge with a persistent `browser-profile` (live view, tabs, address bar, Ask Jarvis about this page).
+- Safety: no password/OTP/card typing, R3 for submit/buy/send/post clicks, banking/broker/patient domains blocked, STOP blocks automation, no cookie access.
+
 ## v3.1.1 — 2026-11-18 — Phase 3b: search fallback chain
 - Web search fallback chain: keyed Tavily/Brave/Serper/SerpAPI (optional) → ddgs → Bing RSS → Google News RSS → DuckDuckGo HTML → Wikipedia → Gemini grounding; retries, per-source timeouts, dedupe, real URLs only.
 - Chain reports cite sources with engine names; Tasks page shows sources/engines/citations and a report viewer.

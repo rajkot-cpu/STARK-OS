@@ -45,3 +45,26 @@
 .task-report { white-space: pre-wrap; word-break: break-word; max-height: 420px; overflow: auto; margin: 8px 0 0;
   padding: 10px 12px; font: 12px/1.5 ui-monospace, Consolas, monospace; background: rgba(0, 20, 40, .55);
   border: 1px solid rgba(80, 200, 255, .18); border-radius: 8px; color: #cfe9ff; }
+
+/* ---- Browser tab (Phase 3c) ---- */
+.br-bar { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.br-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.br-url { flex: 1; min-width: 240px; padding: 7px 10px; border-radius: 8px; border: 1px solid rgba(80, 200, 255, .3);
+  background: rgba(0, 16, 32, .7); color: #e6f6ff; font: 13px/1.3 inherit; }
+.br-tabs { display: flex; gap: 4px; overflow-x: auto; }
+.br-tab { display: flex; align-items: center; gap: 6px; max-width: 220px; padding: 4px 8px; border-radius: 6px;
+  border: 1px solid rgba(80, 200, 255, .2); background: rgba(0, 20, 40, .5); color: #9fc7dd; font-size: 12px; cursor: pointer; }
+.br-tab span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.br-tab.on { border-color: #38d4ff; color: #e6f6ff; }
+.br-tab i { font-style: normal; opacity: .7; } .br-tab i:hover { opacity: 1; color: #ff5a7a; }
+.br-grid { display: grid; grid-template-columns: minmax(0, 2.2fr) minmax(260px, 1fr); gap: 10px; }
+.br-viewport { position: relative; min-height: 360px; display: flex; flex-direction: column; gap: 8px; }
+.br-viewport img { width: 100%; height: auto; border-radius: 6px; cursor: crosshair; background: #000; min-height: 200px; }
+.br-empty { position: absolute; inset: 40px 20px auto; text-align: center; }
+.br-type { display: flex; gap: 6px; } .br-type input { flex: 1; padding: 6px 8px; border-radius: 6px;
+  border: 1px solid rgba(80, 200, 255, .25); background: rgba(0, 16, 32, .7); color: #e6f6ff; }
+.br-side textarea { width: 100%; box-sizing: border-box; border-radius: 6px; border: 1px solid rgba(80, 200, 255, .25);
+  background: rgba(0, 16, 32, .7); color: #e6f6ff; padding: 6px 8px; resize: vertical; }
+.br-answer { margin-top: 8px; max-height: 420px; overflow: auto; }
+.br-md { margin-top: 4px; line-height: 1.5; color: #d8eefc; }
+@media (max-width: 1200px) { .br-grid { grid-template-columns: 1fr; } }
