@@ -57,7 +57,19 @@ def main():
     except Exception:
         pass
     _install_crash_log(root)
+    from bridge_api import log_error as _log
+    import session_log
+
+    session_log.enable_faulthandler(root)
+    sess = session_log.SessionLog(root, log=_log)
+    sess.start()  # reports a previous session that ended without a clean exit
+    sess.start_heartbeat(30.0)
+    exit_reason = "webview loop ended"
     api = BridgeApi(root=root)
+    try:
+        api.start_safety()  # Emergency STOP: STOP-file watcher + Ctrl+Alt+Shift+S
+    except Exception:
+        pass
     try:
         import voice
 
@@ -76,7 +88,12 @@ def main():
     try:
         from bridge_api import log_error
 
-        win.events.closing += lambda *a: log_error(root, "host", "window closing (closed by user or Windows)", "info")
+        def _closing(*a):
+            nonlocal exit_reason
+            exit_reason = "window closed (by user or Windows)"
+            log_error(root, "host", "window closing (closed by user or Windows)", "info")
+
+        win.events.closing += _closing
     except Exception:
         pass
     try:
@@ -84,8 +101,16 @@ def main():
     except Exception:
         pass
     try:
-        webview.start(http_server=True, debug=False)
+        # JARVIS_WEBVIEW_DEBUG=1 enables WebView2 DevTools (diagnostics only; off by default).
+        webview.start(http_server=True, debug=os.environ.get("JARVIS_WEBVIEW_DEBUG") == "1")
+    except BaseException as e:
+        exit_reason = f"webview error: {type(e).__name__}: {e}"
+        raise
     finally:
+        try:
+            sess.end(exit_reason)
+        except Exception:
+            pass
         try:
             from bridge_api import log_error
 

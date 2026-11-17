@@ -52,6 +52,9 @@ def log_error(root, source: str, message: str, level: str = "error") -> None:
         pass
 
 
+HALTED = {"ok": False, "halted": True, "error": "Emergency STOP is active. Type RESUME (or press Resume) to continue."}
+
+
 class BridgeApi:
     def __init__(self, root: Path):
         self.root = Path(root)
@@ -60,6 +63,117 @@ class BridgeApi:
         self._wake = None
         self._wake_busy = threading.Lock()
         self._wake_info = {"state": "idle", "heard": "", "reply": "", "error": "", "engine": ""}
+        self._hotkey = None
+        self._init_halt()
+
+    # ---- Emergency STOP (Master Upgrade Module 1A) ----
+
+    def _halt_ctl(self):
+        h = self.__dict__.get("halt")
+        if h is None:  # objects built without __init__ (tests) get one lazily
+            self._init_halt()
+            h = self.halt
+        return h
+
+    def _init_halt(self) -> None:
+        import halt
+
+        self.halt = halt.HaltController(self.root)
+        halt.set_current(self.halt)
+        self.halt.on_stop("agents_stopped", lambda: self._hub.stop_all("emergency stop") if getattr(self, "_hub", None) else 0)
+        self.halt.on_stop("wake_word", self._halt_wake)
+        self.halt.on_stop("speech", self._halt_speech)
+        self.halt.on_stop("trading", lambda: "no trading module is active in this build; nothing to stop")
+
+    def _halt_wake(self):
+        if getattr(self, "_wake", None) and getattr(self._wake, "running", False):
+            self._wake_stop()
+            return "stopped"
+        return "not running"
+
+    def _halt_speech(self):
+        try:
+            import tts
+
+            tts.stop()
+            return "stopped"
+        except Exception as e:
+            return f"n/a ({type(e).__name__})"
+
+    def _stopped(self) -> bool:
+        try:
+            return self._halt_ctl().is_stopped()
+        except Exception:
+            return True  # fail closed
+
+    def halt_status(self) -> dict:
+        try:
+            d = self._halt_ctl().status()
+            d["hotkey"] = {"label": "Ctrl+Alt+Shift+S",
+                           "state": getattr(getattr(self, "_hotkey", None), "state", "off"),
+                           "error": getattr(getattr(self, "_hotkey", None), "error", "")}
+            return {"ok": True, "data": d}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def halt_stop(self, source: str = "button", reason: str = "") -> dict:
+        try:
+            src = str(source or "button")[:20]
+            return self._halt_ctl().stop(src, str(reason or f"STOP pressed ({src})"))
+        except Exception as e:
+            log_error(self.root, "bridge.halt_stop", str(e))
+            return {"ok": False, "error": str(e)}
+
+    def halt_resume(self, typed: str = "") -> dict:
+        try:
+            return self._halt_ctl().resume("button", str(typed or ""))
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def start_safety(self) -> dict:
+        """Called once by host_main: STOP-file watcher + global hotkey (config flags)."""
+        out = {}
+        try:
+            import cc_settings
+
+            st = cc_settings.load(self.root)
+            self._halt_ctl().check_once()
+            if st.get("stop_file_watch", True):
+                self._halt_ctl().start_watch(1.0)
+                out["stop_file_watch"] = "on"
+            if st.get("stop_hotkey", True):
+                from hotkey_win import GlobalHotkey
+
+                self._hotkey = GlobalHotkey(lambda: self._halt_ctl().stop("hotkey", "Ctrl+Alt+Shift+S pressed"))
+                out["hotkey"] = self._hotkey.start()
+                if self._hotkey.state == "failed":
+                    log_error(self.root, "safety.hotkey", self._hotkey.error, "warn")
+            return {"ok": True, "data": out}
+        except Exception as e:
+            log_error(self.root, "safety.start", str(e))
+            return {"ok": False, "error": str(e), "data": out}
+
+    def safety_info(self) -> dict:
+        """Safety page: STOP state, permission levels, audit-chain check, key storage (names only)."""
+        try:
+            import audit_chain
+            import permissions
+            import secrets_store
+
+            v = audit_chain.verify(self.root / "logs" / "audit.jsonl")
+            sec = secrets_store.status(self.root)
+            return {"ok": True, "data": {
+                "halt": self.halt_status().get("data"),
+                "levels": permissions.table(),
+                "audit": {k: v[k] for k in ("ok", "lines", "chained", "legacy")} | {
+                    "problems": v["problems"][:5]},
+                "secrets": {"credential_manager": sec["credential_manager"],
+                            "in_credential_manager": len(sec["keys_in_credential_manager"]),
+                            "plaintext_in_file": len(sec["plaintext_keys_in_file"]),
+                            "missing_from_store": sec["missing_from_store"]},
+            }}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
 
     def status(self) -> dict:
         try:
@@ -80,6 +194,7 @@ class BridgeApi:
                     "policy_ok": bool(s.get("policy_ok")),
                     "today": s.get("today"),
                     "root": s.get("root"),
+                    "halted": self._stopped(),
                 },
             }
         except Exception as e:
@@ -132,6 +247,7 @@ class BridgeApi:
             from agents.worker import AgentHub
 
             self._hub = AgentHub(root=self.root, on_event=self._on_agent_event)
+            self._hub.halted = self._stopped
         return self._hub
 
     def _on_agent_event(self, role_id: str, kind: str, row: dict) -> None:
@@ -182,6 +298,25 @@ class BridgeApi:
 
         m = match(text)
         intent = m["intent"]
+        if intent == "halt":
+            r = self._halt_ctl().stop("voice" if speak else "command", f"said/typed: {text[:60]}")
+            say = "Emergency stop. All automation is halted. Type RESUME when you want me to continue."
+            if speak:
+                self.speak(say)
+            return {"ok": True, "data": {"routed": "halt", "reply": say, "halt": r.get("data")}}
+        if intent == "resume":
+            if speak:
+                say = "For safety I can't resume by voice. Type resume in the command bar or press Resume."
+                self.speak(say)
+                return {"ok": True, "data": {"routed": "resume", "resumed": False, "reply": say}}
+            r = self._halt_ctl().resume("command", "RESUME")
+            say = ("Resumed. Nothing that was stopped has been restarted." if r.get("ok")
+                   else r.get("error") or "Could not resume.")
+            return {"ok": True, "data": {"routed": "resume", "resumed": bool(r.get("ok")), "reply": say}}
+        if intent == "agent" and self._stopped():
+            say = "Emergency STOP is active, so I won't start agents. Type RESUME first."
+            return {"ok": True, "data": {"routed": "agent", "role": m["role"], "started": False,
+                                         "halted": True, "reply": say}}
         if intent == "agent":
             from agents.registry import ROLES
 
@@ -223,6 +358,8 @@ class BridgeApi:
             return {"ok": False, "error": str(e)}
 
     def agent_start(self, role_id: str, goal: str = "") -> dict:
+        if self._stopped():
+            return HALTED
         try:
             return self._agents_hub().start(str(role_id), goal=str(goal or ""))
         except Exception as e:
@@ -250,6 +387,8 @@ class BridgeApi:
 
     def shell_confirm(self, command: str, role_id: str = "") -> dict:
         """Run an R3-confirmed (non-allowlisted) shell command."""
+        if self._stopped():
+            return HALTED
         try:
             from agent_tools import AgentTools
 
@@ -349,6 +488,8 @@ class BridgeApi:
             return {"ok": False, "error": str(e)}
 
     def start_workday(self, confirmed: bool = False) -> dict:
+        if self._stopped():
+            return HALTED
         if not confirmed:
             return {"ok": False, "error": "R3 confirmation required"}
         try:
@@ -477,7 +618,7 @@ class BridgeApi:
         try:
             import cc_settings
 
-            updates = dict(updates or {})
+            updates = {k: v for k, v in dict(updates or {}).items() if k not in cc_settings.FILE_ONLY_KEYS}
             cur = cc_settings.load(self.root)
             want_wake = updates.pop("wake_word", None)
             if want_wake is True and not cur["wake_word"]:
@@ -507,6 +648,8 @@ class BridgeApi:
             return {"ok": False, "error": str(e)}
 
     def _wake_start(self) -> dict:
+        if self._stopped():
+            return HALTED
         from wakeword import WakeListener, available
 
         ok, why = available()
@@ -587,6 +730,12 @@ class BridgeApi:
 
     def shutdown(self) -> None:
         try:
+            self._halt_ctl().stop_watch()
+            if getattr(self, "_hotkey", None):
+                self._hotkey.stop()
+        except Exception:
+            pass
+        try:
             self._wake_stop()
         except Exception:
             pass
@@ -626,6 +775,8 @@ class BridgeApi:
         """Operator-initiated screen read. R3 every capture (UI confirm card)."""
         if confirmed is not True:
             return {"ok": False, "error": "R3 confirmation required for every screen capture"}
+        if self._stopped():
+            return HALTED
         try:
             import cc_settings
             from screen import read_screen
@@ -641,6 +792,8 @@ class BridgeApi:
 
     def tool_confirm(self, role_id: str = "", token: str = "") -> dict:
         """Run an agent's pending R3 tool request (MCP call or screen read)."""
+        if self._stopped():
+            return HALTED
         try:
             import cc_settings
 

@@ -44,9 +44,17 @@ def load_secrets(root: Path | None = None) -> int:
     if root is None:
         root = Path(os.environ.get("JARVIS_HOME") or os.environ.get("JARVIS_ROOT") or ".")
     path = Path(root) / "secrets" / "api_keys.env"
-    if not path.is_file():
-        return 0
     n = 0
+    try:  # Windows Credential Manager first (Module 1C); api_keys.env stays the fallback
+        import secrets_store
+
+        known = [env for _, _, env, _ in PROVIDERS]
+        names = list(dict.fromkeys(secrets_store.migrated_names(root) + known))
+        n += secrets_store.load_into_env(root, names)
+    except Exception:
+        pass
+    if not path.is_file():
+        return n
     try:
         for raw in path.read_text(encoding="utf-8").splitlines():
             line = raw.strip()

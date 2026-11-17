@@ -29,7 +29,7 @@ python -m PyInstaller --noconfirm --clean --onefile --windowed --name Jarvis `
   --collect-all speech_recognition `
   --hidden-import pyttsx3 --hidden-import pyttsx3.drivers --hidden-import pyttsx3.drivers.sapi5 `
   --hidden-import win32com.client --hidden-import pythoncom `
-  --hidden-import cc_settings --hidden-import tts --hidden-import wakeword --hidden-import mcp_client `
+  --hidden-import cc_settings --hidden-import halt --hidden-import hotkey_win --hidden-import audit_chain --hidden-import secrets_store --hidden-import session_log --hidden-import permissions --hidden-import faulthandler --hidden-import tts --hidden-import wakeword --hidden-import mcp_client `
   --hidden-import web_search --hidden-import screen --hidden-import winsound `
   --collect-submodules video_studio --hidden-import numpy --hidden-import PIL.ImageDraw --hidden-import PIL.ImageFilter --hidden-import wave `
   --hidden-import openwakeword --hidden-import openwakeword.model --hidden-import openwakeword.utils `
