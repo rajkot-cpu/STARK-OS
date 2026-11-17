@@ -227,7 +227,18 @@ class BridgeStopTests(unittest.TestCase):
             self.assertEqual(r["data"]["routed"], "start_trading")
             self.assertIn("No trading was started", r["data"]["reply"])
             rep = api.halt_stop("button")["data"]["report"]
-            self.assertIn("no trading module", rep["trading"])
+            self.assertIn("paper mode only", rep["trading"])
+            self.assertIn("local_api", rep)
+            self.assertIn("chains", rep)
+
+    def test_ui_cannot_enable_live_trading(self):
+        with tempfile.TemporaryDirectory() as d:
+            api = _api(d)
+            api.settings_set({"live_trading_enabled": True}, confirmed=True)
+            self.assertFalse(cc_settings.load(d)["live_trading_enabled"])
+            r = api.live_order("NIFTY", "BUY", 1, typed="R4 CONFIRM")
+            self.assertFalse(r["ok"])
+            self.assertEqual(r["gate"], 1)
 
     def test_halt_status_and_safety_info(self):
         with tempfile.TemporaryDirectory() as d:
