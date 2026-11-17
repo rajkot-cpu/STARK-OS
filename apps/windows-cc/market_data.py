@@ -56,6 +56,26 @@ def fetch(symbol: str = "NIFTY", tf: str = "1d", timeout: float = 10.0, fetch_fn
     if raw is None:
         return {"ok": False, "error": "market data unavailable (" + "; ".join(errors) + ")", "source": SOURCE}
     out = parse(raw, sym, tf)
+    if out.get("ok") and tf == "1d":
+        # Yahoo's long daily range often lags by a session; the 5-day range has the latest bar.
+        try:
+            u5 = f"https://{_HOSTS[0]}/v8/finance/chart/{q}?interval=1d&range=5d&includePrePost=false"
+            if fetch_fn:
+                raw5 = fetch_fn(u5)
+            else:
+                req = urllib.request.Request(u5, headers={"User-Agent": "Mozilla/5.0 (JARVIS market data)"})
+                with urllib.request.urlopen(req, timeout=timeout) as r5:
+                    raw5 = json.loads(r5.read().decode("utf-8", "replace"))
+            recent = parse(raw5, sym, tf)
+            if recent.get("ok"):
+                day = lambda t: time.strftime("%Y-%m-%d", time.gmtime(t + 19800))  # IST date
+                have = {day(b["t"]) for b in out["bars"]}
+                extra = [b for b in recent["bars"] if day(b["t"]) not in have and b["t"] > out["bars"][-1]["t"]]
+                if extra:
+                    out["bars"] = out["bars"] + extra
+                    out["merged_recent"] = len(extra)
+        except Exception:
+            pass
     if out.get("ok"):
         with _lock:
             _CACHE[key] = (time.time(), out)
@@ -76,14 +96,25 @@ def parse(raw: dict, sym: str, tf: str) -> dict:
         for i, t in enumerate(ts):
             o, h, lo, c = (qd.get(k, [None] * len(ts))[i] for k in ("open", "high", "low", "close"))
             v = (qd.get("volume") or [None] * len(ts))[i]
+            if i == len(ts) - 1 and c is None and o is not None and meta.get("regularMarketPrice") \
+                    and int(meta.get("regularMarketTime") or 0) >= int(t):
+                # Latest session not yet closed out by Yahoo: use its own session summary (last price,
+                # day high/low) for that one bar. Real quote fields, not interpolation.
+                c = float(meta["regularMarketPrice"])
+                h = max(x for x in (h, meta.get("regularMarketDayHigh"), c, o) if x is not None)
+                lo = min(x for x in (lo, meta.get("regularMarketDayLow"), c, o) if x is not None)
             if None in (o, h, lo, c):
                 continue  # Yahoo leaves holes for missing bars; skip, never interpolate
             bars.append({"t": int(t), "o": float(o), "h": float(h), "l": float(lo), "c": float(c), "v": float(v or 0)})
         if len(bars) < 2:
             return {"ok": False, "error": "too few bars returned", "source": SOURCE}
+        last = float(meta.get("regularMarketPrice") or bars[-1]["c"])
+        chg_pct = meta.get("regularMarketChangePercent")
+        # previous session close: from Yahoo's own change % when given (chartPreviousClose is the close
+        # before the *chart range*, not the previous session), else the prior daily bar.
+        prev = last / (1 + float(chg_pct) / 100) if chg_pct not in (None, "") else bars[-2]["c"]
         return {"ok": True, "symbol": sym, "yahoo": meta.get("symbol", ""), "tf": tf, "bars": bars,
-                "last": float(meta.get("regularMarketPrice") or bars[-1]["c"]),
-                "prev_close": float(meta.get("chartPreviousClose") or meta.get("previousClose") or bars[-2]["c"]),
+                "last": last, "prev_close": float(prev),
                 "market_time": int(meta.get("regularMarketTime") or bars[-1]["t"]),
                 "exchange_tz": meta.get("exchangeTimezoneName", ""), "source": SOURCE, "fetched": int(time.time())}
     except Exception as e:

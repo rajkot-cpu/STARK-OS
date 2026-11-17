@@ -83,6 +83,17 @@ class MarketDataTests(unittest.TestCase):
         self.assertEqual([b["t"] for b in r["bars"]], [1, 3])
         self.assertEqual(r["last"], 25400.5)
 
+    def test_open_last_session_uses_yahoo_session_summary(self):
+        raw = {"chart": {"result": [{"meta": {"regularMarketPrice": 110.0, "regularMarketChangePercent": 10.0,
+                                              "regularMarketDayHigh": 112.0, "regularMarketDayLow": 99.0,
+                                              "regularMarketTime": 50},
+                                     "timestamp": [10, 40],
+                                     "indicators": {"quote": [{"open": [90, 101], "high": [101, None], "low": [89, None],
+                                                               "close": [100, None], "volume": [0, 0]}]}}]}}
+        r = market_data.parse(raw, "NIFTY", "1d")
+        self.assertEqual(r["bars"][-1], {"t": 40, "o": 101.0, "h": 112.0, "l": 99.0, "c": 110.0, "v": 0.0})
+        self.assertAlmostEqual(r["prev_close"], 100.0)
+
     def test_unknown_symbol_and_failure_are_honest(self):
         self.assertFalse(market_data.fetch("XYZ")["ok"])
         r = market_data.fetch("NIFTY", "5m", fetch_fn=lambda url: (_ for _ in ()).throw(OSError("down")))
