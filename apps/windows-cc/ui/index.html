@@ -6,6 +6,7 @@
   <title>JARVIS Command Center</title>
   <link rel="stylesheet" href="css/hud.css" />
   <link rel="stylesheet" href="css/v3.css" />
+  <link rel="stylesheet" href="css/p3.css" />
 </head>
 <body>
   <div id="app">
@@ -199,7 +200,7 @@
           <div id="orbit-detail" class="orbit-detail"><div class="muted">Click an agent node to see its recent steps.</div></div>
         </div>
         <div id="agents-page" class="agents-grid"></div></section>
-      <section id="page-tasks" class="page"><h2>Tasks</h2><p class="muted">Task list from Task agent / checklist files when present.</p><div id="tasks-page"></div></section>
+      <section id="page-tasks" class="page"><h2>Tasks</h2><div id="tasks-p3"></div><div id="tasks-page" hidden></div></section>
       <section id="page-calendar" class="page"><h2>Calendar</h2><div id="timeline" class="scroll"></div><div id="calendar-page"></div></section>
       <section id="page-memory" class="page"><h2>Memory</h2>
         <div class="mem-map panel">
@@ -208,6 +209,7 @@
           <div class="mem-float mf-an"><h4>System Analytics</h4><div id="mf-an" class="small"></div></div>
           <div class="mem-float mf-ring"><div id="mf-ring" class="ready-ring" style="--pct:0"><div class="ready-inner"><span class="ready-num" id="mf-ring-n">0</span><small>sources</small></div></div><div id="mf-ring-t" class="small muted"></div></div>
         </div>
+        <div id="mem-search"></div>
         <div id="memory-page"></div></section>
       <section id="page-conversations" class="page"><h2>Conversations</h2><div id="conv-page" class="scroll"></div></section>
       <section id="page-knowledge" class="page"><h2>Knowledge Base</h2><div id="knowledge-page"></div></section>
@@ -220,7 +222,7 @@
         <div id="sec-cards" class="sec-cards"></div>
       </section>
       <section id="page-trading" class="page"><h2>Trading</h2>
-        <div class="paper-banner" role="note"><b>PAPER — no live orders.</b> Analysis and paper trading only. Jarvis cannot place, modify or cancel real orders; live trading needs a separate R4 approval you have not given. <span id="tr-source" class="tr-src">Market data: not connected</span></div>
+        <div class="paper-banner" role="note"><b>PAPER MODE — no live orders.</b> Real indicators from delayed keyless data; Buy/Sell buttons write only to the paper ledger. Live orders are off and would need a typed R4 CONFIRM for each one. <span id="tr-source" class="tr-src">Market data: not connected</span></div>
         <div id="trading-grid" class="tr-grid"></div>
       </section>
       <section id="page-safety" class="page"><h2>Safety &amp; Emergency STOP</h2>
@@ -284,7 +286,7 @@
           <div class="panel" id="set-providers-panel">
             <h3>AI providers</h3>
             <div id="set-providers" class="small"></div>
-            <p class="muted small">Keys live in Windows Credential Manager (<code>JARVIS/&lt;KEY&gt;</code>). To add or replace one, put it in <code>secrets\api_keys.env</code> and run <code>python secrets_store.py migrate</code>; Jarvis never shows key values.</p>
+            <p class="muted small">Keys live in Windows Credential Manager (<code>JARVIS/&lt;KEY&gt;</code>). Add or replace one in <b>Keys &amp; brokers</b> below; Jarvis never shows key values.</p>
           </div>
           <div class="panel">
             <h3>MCP tool servers</h3>

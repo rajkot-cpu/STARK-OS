@@ -3,6 +3,7 @@ import { call, uiLog, whenReady } from "./bridge.js";
 import { mountCore } from "./core3d.js";
 import { mountAgentOrbit } from "./orbit3d.js";
 import * as v3 from "./v3.js";
+import * as p3 from "./p3.js";
 
 let core3d = null;
 let agentsOrbit = null;
@@ -10,7 +11,18 @@ let selectedAgent = null;
 let lastAgentsList = [];
 
 // ---- Voice state for the AI Core (listening while recording, speaking while TTS plays) ----
-const voice = { listening: false, speakingUntil: 0, speakStarted: 0, ttsFlag: false, wake: "idle", shown: "" };
+const voice = { listening: false, speakingUntil: 0, speakStarted: 0, ttsFlag: false, wake: "idle", shown: "",
+  wakeEnabled: false, wakeRunning: false };
+// Health "Voice" row: say what the mic is really doing (wake word on / stopped / off), never a blanket "Online".
+function voiceLabel(muted) {
+  if (muted) return ["Muted", "warn"];
+  const st = voiceNow();
+  if (st === "listening") return ["Listening", "ok"];
+  if (st === "speaking") return ["Speaking", "ok"];
+  if (voice.wakeEnabled && voice.wakeRunning) return ["Wake word on", "ok"];
+  if (voice.wakeEnabled) return ["Wake word stopped", "warn"];
+  return ["Tap to talk", "off"];
+}
 function markSpeaking(text) {
   const now = Date.now();
   voice.speakStarted = now;
@@ -69,7 +81,10 @@ function setRoute(name) {
   document.querySelectorAll(".page").forEach((p) => {
     p.classList.toggle("active", p.id === `page-${name}`);
   });
-  if (name === "trading") v3.renderTrading($("trading-grid"));
+  if (name === "trading") p3.renderTradingLive($("trading-grid"));
+  if (name === "tasks") p3.renderTasksP3($("tasks-p3"));
+  if (name === "memory") p3.renderMemorySearch($("mem-search"));
+  if (name === "settings") { p3.renderSettingsP3(document.querySelector("#page-settings .settings-grid")); p3.refreshSettingsP3(); }
   if (name === "agents") renderDiagram();
   if (name === "safety" || name === "security") refreshSafety();
 }
@@ -89,15 +104,15 @@ function renderHealth(status, agents, llms, mem) {
   const ram = lastMetrics && lastMetrics.ram_total_gb ? lastMetrics : null;
   const items = [
     ["core", "#38d4ff", "AI Core", halted ? "Halted" : (status?.policy_ok ? "Active" : (status?.system_status || "—")), halted ? "bad" : (status?.policy_ok ? "ok" : "warn"), ""],
-    ["brain", "#a77bff", "Memory", ram ? `${ram.ram_used_gb} GB / ${ram.ram_total_gb} GB` : "—", "ok",
+    ["brain", "#a77bff", "Memory", ram ? `${ram.ram_used_gb}/${ram.ram_total_gb} GB` : "—", "ok",
       ram ? `<i class="ov-bar"><span style="width:${Math.round(ram.ram_pct)}%"></span></i>` : ""],
-    ["mic", "#3dff9a", "Voice", muted ? "Muted" : (voiceNow() === "idle" ? "Online" : voiceNow() === "listening" ? "Listening" : "Speaking"), muted ? "warn" : "ok", ""],
+    ["mic", "#3dff9a", "Voice", ...voiceLabel(muted), ""],
     ["agents", "#ff9d2e", "Agents", `${active} running`, active ? "ok" : "off", ""],
     ["cpu", "#5b8cff", "LLMs", `${connected} connected`, connected ? "ok" : "bad", ""],
     ["shield", "#19e6c1", "System", halted ? "STOP active" : (status?.quiet_hours ? "Quiet hours" : (status?.policy_ok ? "Optimal" : "Check POLICY")), halted ? "bad" : (status?.policy_ok ? "ok" : "warn"), ""],
   ];
   $("health-list").innerHTML = items.map(([ic, col, k, v, tone, extra]) =>
-    `<li class="ov-row"><span class="ov-ic" style="--oc:${col}">${v3.icon(ic)}</span><span class="ov-k">${k}${extra}</span><strong class="ov-v">${esc(v)}</strong><i class="dot ${tone}"></i></li>`).join("");
+    `<li class="ov-row"><span class="ov-ic" style="--oc:${col}">${v3.icon(ic)}</span><span class="ov-k">${k}${extra}</span><strong class="ov-v" title="${esc(v)}">${esc(v)}</strong><i class="dot ${tone}"></i></li>`).join("");
   // Quiet hours is a normal, scheduled state (no proactive work / notifications) -> calm amber, not red.
   // Only an unapproved POLICY is an error.
   const pill = $("sys-pill");
@@ -369,7 +384,7 @@ function shortTime(v) {
   const d = new Date();
   const today = Number(m[1]) === d.getFullYear() && Number(m[2]) === d.getMonth() + 1 && Number(m[3]) === d.getDate();
   const mon = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][Number(m[2]) - 1];
-  return today ? m[4] : `${Number(m[3])} ${mon} ${m[4]}`;
+  return today ? m[4].slice(0, 5) : `${Number(m[3])} ${mon} ${m[4].slice(0, 5)}`;
 }
 
 function renderFeed(items, filter) {
@@ -665,6 +680,7 @@ async function refresh() {
   ]);
   if (st && st.ok) lastStatus = st.data;
   if (Date.now() - slowAt > 30000) refreshSlow();
+  if ($("page-tasks") && $("page-tasks").classList.contains("active")) p3.loadTasks();
   const hs = await call("halt_status");
   if (hs && hs.ok) renderHalt(hs.data);
   if (["safety", "security"].some((r) => $(`page-${r}`) && $(`page-${r}`).classList.contains("active"))) refreshSafety();
@@ -672,6 +688,8 @@ async function refresh() {
     renderSettings(sets.data);
     voice.ttsFlag = !!sets.data.speaking;
     voice.wake = (sets.data.settings && sets.data.settings.wake_word && sets.data.wake && sets.data.wake.state) || "idle";
+    voice.wakeEnabled = !!(sets.data.settings && sets.data.settings.wake_word);
+    voice.wakeRunning = !!(sets.data.wake && sets.data.wake.running);
     if (!voice.ttsFlag && Date.now() - voice.speakStarted > 2500) voice.speakingUntil = 0;
     pushVoice();
   }
@@ -858,7 +876,6 @@ async function loadSkills() {
   $("skills-page").innerHTML = items.map((s) =>
     `<div class="feed-item"><strong>${s.name}</strong> · ${s.risk}<div class="muted">${s.summary || ""}</div></div>`
   ).join("") || `<div class="muted">No skills found.</div>`;
-  $("tasks-page").innerHTML = $("skills-page").innerHTML;
 }
 
 // Visible message instead of a blank panel when WebGL is unavailable or its context is lost.
