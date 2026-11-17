@@ -101,7 +101,7 @@ to `max_results`, at most ~half from any one engine):
 | 1 | Tavily / Brave Search / Serper / SerpAPI | optional, Credential Manager (`JARVIS_TAVILY_API_KEY`, `JARVIS_BRAVE_SEARCH_API_KEY`, `JARVIS_SERPER_API_KEY`, `JARVIS_SERPAPI_API_KEY`) | Only used when a key is saved. Settings → Keys & brokers → **Test** (SerpAPI: free account read; others: one 1-result query). |
 | 2 | DuckDuckGo (`ddgs`, backends yahoo → bing → google) | none | |
 | 3 | Bing web RSS | none | Off-topic hits filtered by key-term match. |
-| 4 | Google News RSS | none | Moved up for news/market queries. |
+| 4 | Google News RSS | none | Moved before Bing for news/market queries. |
 | 5 | DuckDuckGo HTML | none | Ads skipped, `uddg` redirect decoded. |
 | 6 | Wikipedia (MediaWiki API) | none | |
 | 7 | Gemini Google-search grounding | Gemini key | Only if all above return nothing. Key sent in a header. |
