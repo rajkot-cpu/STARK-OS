@@ -42,6 +42,7 @@ class Phase3Mixin:
     def _p3_halt_hooks(self, ctl) -> None:
         ctl.on_stop("chains", lambda: self._p3()["orch"].stop_all("Emergency STOP"))
         ctl.on_stop("local_api", lambda: "requests blocked (423) until RESUME")
+        ctl.on_stop("browser", lambda: "automation blocked until RESUME (Edge window left open for you)")
 
     # ---- local API ----
     def start_local_api(self) -> dict:
@@ -419,3 +420,67 @@ class Phase3Mixin:
             return r
         except Exception as e:
             return _err(e)
+
+    # ---- Browser (Phase 3c): Edge with its own persistent profile, driven over loopback DevTools ----
+    def _browser(self):
+        import browser_cdp
+
+        return browser_cdp.get(self.root)
+
+    def _bcall(self, fn, *a, **k) -> dict:
+        if self._stopped():
+            return HALTED
+        try:
+            r = fn(*a, **k)
+            if isinstance(r, dict) and ("ok" in r):
+                return r
+            return {"ok": True, "data": r}
+        except Exception as e:
+            return {"ok": False, "error": str(e)[:300]}
+
+    def browser_status(self) -> dict:
+        try:
+            return {"ok": True, "data": self._browser().status()}
+        except Exception as e:
+            return _err(e)
+
+    def browser_start(self, url: str = "https://www.google.com/") -> dict:
+        return self._bcall(self._browser().start, str(url or "https://www.google.com/"))
+
+    def browser_open(self, url: str = "", new_tab: bool = False) -> dict:
+        return self._bcall(self._browser().open, str(url or ""), bool(new_tab))
+
+    def browser_activate(self, tab: str = "") -> dict:
+        return self._bcall(self._browser().activate, str(tab or ""))
+
+    def browser_close_tab(self, tab: str = "") -> dict:
+        return self._bcall(self._browser().close_tab, str(tab or ""))
+
+    def browser_nav(self, step: int = 0) -> dict:
+        return self._bcall(self._browser().history, int(step or 0))
+
+    def browser_read(self) -> dict:
+        return self._bcall(self._browser().read)
+
+    def browser_shot(self) -> dict:
+        return self._bcall(self._browser().screenshot)
+
+    def browser_scroll(self, dy: int = 600) -> dict:
+        return self._bcall(self._browser().scroll, int(dy or 0))
+
+    def browser_click(self, jid: int = 0, confirmed: bool = False) -> dict:
+        # confirmed=True only comes from the in-app approval dialog (the local API never exposes it).
+        return self._bcall(self._browser().click, int(jid), bool(confirmed))
+
+    def browser_type(self, jid: int = 0, text: str = "", submit: bool = False, confirmed: bool = False) -> dict:
+        return self._bcall(self._browser().type, int(jid), str(text or ""), bool(submit), bool(confirmed))
+
+    def browser_user_click(self, x: float = 0, y: float = 0) -> dict:
+        return self._bcall(self._browser().user_click_at, float(x), float(y))
+
+    def browser_user_text(self, text: str = "", enter: bool = False) -> dict:
+        return self._bcall(self._browser().user_text, str(text or ""), bool(enter))
+
+    def browser_ask(self, question: str = "") -> dict:
+        return self._bcall(self._browser().ask, str(question or ""))
+

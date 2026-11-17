@@ -38,7 +38,7 @@ def _speakable(text: str, limit: int = 200) -> str:
     return cut[: end + 1] if end > 60 else cut.rsplit(" ", 1)[0] + "…"
 
 
-APP_VERSION = "3.1.1"
+APP_VERSION = "3.2.0"
 OPERATOR_NAME = "Dr. Chandan Kumar"
 
 
@@ -850,6 +850,23 @@ class BridgeApi(Phase3Mixin):
                 r = self.screen_read(pend.get("question") or "", confirmed=True)
                 desc = (r.get("data") or {}).get("description") if r.get("ok") else r.get("error")
                 hub.record_result(rid, f"Screen: {desc or ''}")
+                hub.resume(rid, r)
+                return r
+            if pend["kind"] == "browser":
+                import browser_cdp
+
+                b = browser_cdp.get(self.root)
+                try:
+                    if pend.get("op") == "click":
+                        r = b.click(int(pend.get("target") or 0), confirmed=True)
+                    elif pend.get("op") == "type_submit":
+                        r = b.type(int(pend.get("target") or 0), pend.get("text") or "", True, confirmed=True)
+                    else:
+                        r = {"ok": False, "error": "unknown browser op"}
+                except Exception as e:
+                    r = {"ok": False, "error": str(e)[:200]}
+                cc_settings.audit(self.root, f"agent-{rid}", "browser_r3", f"{pend['label']} ok={bool(r.get('ok'))} (R3 confirmed)")
+                hub.record_result(rid, f"{pend['label']}: {'done' if r.get('ok') else r.get('error')}")
                 hub.resume(rid, r)
                 return r
             if pend["kind"] == "file":

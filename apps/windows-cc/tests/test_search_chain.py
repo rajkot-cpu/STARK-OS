@@ -80,7 +80,7 @@ class ChainTests(unittest.TestCase):
 
     def test_default_chain_order_and_keyed_first(self):
         names = [n for n, _ in web_search.default_chain("NIFTY 50 outlook this week", keys={"brave": "k", "tavily": ""})]
-        self.assertEqual(names, ["brave", "ddgs", "bing", "google_news", "duckduckgo_html", "wikipedia"])
+        self.assertEqual(names, ["brave", "ddgs", "google_news", "bing", "duckduckgo_html", "wikipedia"])
         names = [n for n, _ in web_search.default_chain("photosynthesis", keys={})]
         self.assertEqual(names, ["ddgs", "bing", "duckduckgo_html", "wikipedia", "google_news"])
 

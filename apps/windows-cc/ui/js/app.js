@@ -4,6 +4,7 @@ import { mountCore } from "./core3d.js";
 import { mountAgentOrbit } from "./orbit3d.js";
 import * as v3 from "./v3.js";
 import * as p3 from "./p3.js";
+import { renderBrowser } from "./browser.js";
 
 let core3d = null;
 let agentsOrbit = null;
@@ -82,6 +83,7 @@ function setRoute(name) {
     p.classList.toggle("active", p.id === `page-${name}`);
   });
   if (name === "trading") p3.renderTradingLive($("trading-grid"));
+  if (name === "browser") renderBrowser($("browser-host"));
   if (name === "tasks") p3.renderTasksP3($("tasks-p3"));
   if (name === "memory") p3.renderMemorySearch($("mem-search"));
   if (name === "settings") { p3.renderSettingsP3(document.querySelector("#page-settings .settings-grid")); p3.refreshSettingsP3(); }

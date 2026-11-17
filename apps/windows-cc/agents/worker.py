@@ -796,12 +796,17 @@ class AgentHub:
 
     def _halt_r3(self, role_id: str, result: dict) -> None:
         kind = result.get("kind")
-        if kind in ("mcp", "screen", "file"):
+        if kind in ("mcp", "screen", "file", "browser"):
             token = uuid.uuid4().hex[:12]
             if kind == "mcp":
                 label = f"MCP {result.get('server')}.{result.get('tool')}"
                 pend = {"kind": "mcp", "server": str(result.get("server")), "tool": str(result.get("tool")),
                         "args": result.get("args") or {}, "token": token, "label": label}
+            elif kind == "browser":
+                label = str(result.get("label") or "Browser action")[:120]
+                pend = {"kind": "browser", "op": str(result.get("op") or ""), "target": int(result.get("target") or 0),
+                        "text": str(result.get("text") or ""), "reason": str(result.get("reason") or ""),
+                        "token": token, "label": label}
             elif kind == "file":
                 op = str(result.get("op") or "")
                 label = f"{'Overwrite' if op == 'overwrite' else 'Delete'} workspace/{result.get('path')}"
@@ -884,6 +889,8 @@ def _pending_view(p: dict | None) -> dict | None:
         out["args_preview"] = str(p.get("content") or "")[:400]
     elif p.get("kind") == "mcp":
         out["args_preview"] = json.dumps(p.get("args") or {}, ensure_ascii=False)[:400]
+    elif p.get("kind") == "browser":
+        out["args_preview"] = (f"why: {p.get('reason', '')}" + (f" · text: {p.get('text', '')[:120]}" if p.get("text") else ""))[:400]
     else:
         out["question"] = str(p.get("question") or "")[:300]
     return out

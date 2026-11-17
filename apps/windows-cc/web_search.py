@@ -4,9 +4,9 @@
 Order (first that returns results wins; later sources top up until max_results):
   1. keyed APIs, only if a key is saved in Credential Manager:
      Tavily, Brave Search, Serper (Google), SerpAPI (Google)
-  2. ddgs package (DuckDuckGo metasearch; backends yahoo → bing → google)
+  2. ddgs package (DuckDuckGo metasearch; backends yahoo → bing)
   3. Bing web RSS            (keyless, https://www.bing.com/search?format=rss)
-  4. Google News RSS         (keyless; moved up for news-like queries)
+  4. Google News RSS         (keyless; moved before Bing for news/market queries)
   5. DuckDuckGo HTML         (keyless, html.duckduckgo.com)
   6. Wikipedia (MediaWiki)   (keyless API)
   7. Gemini google_search grounding (only if everything above returned nothing)
@@ -34,7 +34,9 @@ OVERALL_TIMEOUT = 30.0        # whole chain
 RETRIES = 1
 BACKOFF = 0.8
 # Measured on chandan 2026-11-18: ddgs yahoo/bing/google OK; auto/duckduckgo/brave/mojeek "No results".
-BACKENDS = ("yahoo", "bing", "google")
+# "google" is deliberately NOT used: scraping Google from the operator's IP got that IP a Google
+# "unusual traffic" captcha in his own browser.
+BACKENDS = ("yahoo", "bing")
 GROUNDING_MODEL = "gemini-3.1-flash-lite-preview"
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
       "Chrome/130.0 Safari/537.36")
@@ -207,11 +209,10 @@ def default_chain(query: str, keys: dict | None = None) -> list[tuple[str, objec
         keys = {e: (os.environ.get(env) or "").strip() for e, env in KEYED}
     chain = [(e, (lambda q, n, _f=_KEYED_FN[e], _k=k: _f(q, n, _k))) for e, k in keys.items() if k and e in _KEYED_FN]
     chain.append(("ddgs", _ddgs))
-    chain.append(("bing", _bing_rss))
-    if NEWSY.search(query or ""):
-        chain += [("google_news", _google_news), ("duckduckgo_html", _ddg_html), ("wikipedia", _wikipedia)]
+    if NEWSY.search(query or ""):  # news/market topics: fresh articles before generic pages
+        chain += [("google_news", _google_news), ("bing", _bing_rss), ("duckduckgo_html", _ddg_html), ("wikipedia", _wikipedia)]
     else:
-        chain += [("duckduckgo_html", _ddg_html), ("wikipedia", _wikipedia), ("google_news", _google_news)]
+        chain += [("bing", _bing_rss), ("duckduckgo_html", _ddg_html), ("wikipedia", _wikipedia), ("google_news", _google_news)]
     return chain
 
 
