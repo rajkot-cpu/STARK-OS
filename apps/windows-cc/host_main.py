@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import os
+import threading
 import sys
 
 HERE = Path(__file__).resolve().parent
@@ -68,6 +69,14 @@ def main():
     api = BridgeApi(root=root)
     try:
         api.start_safety()  # Emergency STOP: STOP-file watcher + Ctrl+Alt+Shift+S
+    except Exception:
+        pass
+    try:
+        api.start_local_api()  # Phase 3: 127.0.0.1-only HTTP API (token in Credential Manager)
+    except Exception:
+        pass
+    try:
+        threading.Thread(target=api.memory_reindex, daemon=True, name="memory-reindex").start()
     except Exception:
         pass
     try:

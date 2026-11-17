@@ -166,8 +166,8 @@ body.voice-listening .vc-state { color: var(--ok); }
 #health-list li.ov-row { display: grid; grid-template-columns: 26px 1fr auto 8px; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid rgba(100,180,255,.08); font-size: 12px; }
 .ov-ic { width: 26px; height: 26px; padding: 5px; border-radius: 8px; color: var(--oc); background: color-mix(in srgb, var(--oc) 15%, transparent);
   box-shadow: 0 0 8px color-mix(in srgb, var(--oc) 35%, transparent); display: inline-flex; }
-.ov-k { color: #cfe8ff; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.ov-v { color: #eaf9ff; font-weight: 600; font-size: 11.5px; text-align: right; white-space: nowrap; }
+.ov-k { color: #cfe8ff; display: flex; flex-direction: column; gap: 3px; min-width: 0; overflow: hidden; white-space: nowrap; }
+.ov-v { color: #eaf9ff; font-weight: 600; font-size: 11.5px; text-align: right; white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .ov-bar { display: block; height: 3px; border-radius: 2px; background: rgba(167,123,255,.18); width: 100%; }
 .ov-bar span { display: block; height: 100%; border-radius: 2px; background: linear-gradient(90deg, #7d5cff, #c3a6ff); box-shadow: 0 0 6px #a77bff; }
 .health .ready-ring { width: 112px; height: 112px; }
@@ -183,10 +183,11 @@ body.voice-listening .vc-state { color: var(--ok); }
 .fx-ic { width: 28px; height: 28px; padding: 6px; border-radius: 8px; display: inline-flex; color: var(--cc); background: color-mix(in srgb, var(--cc) 15%, transparent);
   box-shadow: 0 0 8px color-mix(in srgb, var(--cc) 35%, transparent); }
 .c-red { --cc: #ff5a52; } .c-amber { --cc: #ffc14d; } .c-green { --cc: #3dff9a; } .c-blue { --cc: #5b8cff; } .c-cyan { --cc: #38d4ff; } .c-purple { --cc: #a77bff; }
-.fx-top { display: flex; justify-content: space-between; gap: 6px; }
-.fx-top b { font-size: 12px; color: #eaf9ff; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fx-body { min-width: 0; }
+.fx-top { display: flex; justify-content: space-between; gap: 6px; min-width: 0; }
+.fx-top b { flex: 1 1 auto; min-width: 0; font-size: 12px; color: #eaf9ff; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fx-body .msg { color: #8fb0cc; font-size: 11px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.fx-body .t { color: #6fa3c8; font-size: 10px; white-space: nowrap; }
+.fx-body .t { color: #6fa3c8; font-size: 10px; white-space: nowrap; flex: 0 0 auto; }
 @container (max-width: 230px) { .feed-item.fx { grid-template-columns: 22px 1fr; gap: 6px; } .fx-ic { width: 22px; height: 22px; padding: 4px; } }
 
 /* ---------- middle row ---------- */

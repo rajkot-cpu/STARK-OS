@@ -35,8 +35,21 @@ DEFAULTS: dict = {
     # these, so a STOP trigger can't be switched off by a click or an agent.
     "stop_hotkey": True,
     "stop_file_watch": True,
+    # Phase 3: local AI routing (hybrid = cloud first, Ollama fallback/offline).
+    "ai_mode": "hybrid",
+    "local_model": "jarvis-local",
+    # Phase 3: local HTTP API on 127.0.0.1 (token in Credential Manager).
+    "api_enabled": True,
+    "api_port": 8765,
+    # Trading: paper by default. Live broker orders are config-file only and still need a typed
+    # R4 CONFIRM in the app for every order; the UI and agents can never switch this on.
+    "trading_mode": "paper",
+    "live_trading_enabled": False,
 }
 FILE_ONLY_KEYS = ("stop_hotkey", "stop_file_watch")
+FILE_ONLY_OFF_KEYS = ("live_trading_enabled",)
+AI_MODES = ("hybrid", "local_first", "cloud_only")
+TRADING_MODES = ("paper", "signal")
 
 
 def settings_path(root: Path | str) -> Path:
@@ -67,6 +80,26 @@ def _validated(s: dict) -> dict:
         out["whisper_model"] = s["whisper_model"]
     if s.get("voice") in {v["id"] for v in VOICES}:
         out["voice"] = s["voice"]
+    for k in FILE_ONLY_OFF_KEYS:
+        out[k] = s.get(k) is True
+    if s.get("ai_mode") in AI_MODES:
+        out["ai_mode"] = s["ai_mode"]
+    try:
+        import local_llm
+
+        if local_llm.valid_model(s.get("local_model", "")):
+            out["local_model"] = s["local_model"]
+    except Exception:
+        pass
+    out["api_enabled"] = s.get("api_enabled") is not False
+    try:
+        port = int(s.get("api_port", 8765))
+        if 1024 <= port <= 65535:
+            out["api_port"] = port
+    except Exception:
+        pass
+    if s.get("trading_mode") in TRADING_MODES:
+        out["trading_mode"] = s["trading_mode"]
     return out
 
 

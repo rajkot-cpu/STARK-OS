@@ -49,6 +49,12 @@ def load_secrets(root: Path | None = None) -> int:
         import secrets_store
 
         known = [env for _, _, env, _ in PROVIDERS]
+        try:
+            import keys_manager
+
+            known += keys_manager.all_names(root)
+        except Exception:
+            pass
         names = list(dict.fromkeys(secrets_store.migrated_names(root) + known))
         n += secrets_store.load_into_env(root, names)
     except Exception:

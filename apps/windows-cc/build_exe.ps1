@@ -31,6 +31,7 @@ python -m PyInstaller --noconfirm --clean --onefile --windowed --name Jarvis `
   --hidden-import win32com.client --hidden-import pythoncom `
   --hidden-import cc_settings --hidden-import halt --hidden-import hotkey_win --hidden-import audit_chain --hidden-import secrets_store --hidden-import session_log --hidden-import permissions --hidden-import faulthandler --hidden-import tts --hidden-import wakeword --hidden-import mcp_client `
   --hidden-import web_search --hidden-import screen --hidden-import winsound `
+  --hidden-import bridge_phase3 --hidden-import local_llm --hidden-import llm_router --hidden-import memory_db --hidden-import task_queue --hidden-import orchestrator --hidden-import jarvis_api --hidden-import keys_manager --hidden-import market_data --hidden-import indicators --hidden-import trading_engine --hidden-import paper_ledger --hidden-import broker_live --hidden-import sqlite3 `
   --collect-submodules video_studio --hidden-import numpy --hidden-import PIL.ImageDraw --hidden-import PIL.ImageFilter --hidden-import wave `
   --hidden-import openwakeword --hidden-import openwakeword.model --hidden-import openwakeword.utils `
   --hidden-import openwakeword.vad --collect-data openwakeword `

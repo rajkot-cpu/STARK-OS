@@ -1,0 +1,4 @@
+FROM qwen2.5:3b
+# GTX 1050 (2 GB, Pascal) crashes Ollama's CUDA runner (0xc0000409); run on CPU.
+PARAMETER num_gpu 0
+PARAMETER num_ctx 8192

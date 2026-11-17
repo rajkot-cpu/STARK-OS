@@ -1,5 +1,14 @@
 # Changelog
 
+## v3.1.0 — 2026-11-18 — Phase 3: working AI
+- Local AI: Ollama `jarvis-local` (qwen2.5:3b, CPU) in a hybrid router (cloud first, local fallback/offline; cheap tasks local first) for chat, agents and chains.
+- Local HTTP API on 127.0.0.1:8765 (token in Credential Manager `JARVIS/JARVIS_API_TOKEN`, blocked during STOP, no resume/order endpoints).
+- Settings: Keys & brokers (any JARVIS_* key, Sahi/other broker slots → Credential Manager), Local AI routing + test, Local API panel.
+- Memory DB with full-text search; persistent task queue; Research → Analyst → Writer chain writing real reports.
+- Trading: real NIFTY/BANKNIFTY indicators, pivots, statistics, Markov regime, walk-forward from keyless delayed Yahoo data; paper ledger with signal → you press Buy; live adapter slot OFF and fail-closed (typed R4 CONFIRM).
+- Fixes: memory row at 1366 px, feed time cut-off, Voice row reflects the wake-word state.
+- See docs/PHASE3_WORKING_AI.md (includes the v7 bundle review).
+
 ## 2026-11-18 — v3.0.0 Command Center restyle (branch `ui-v3-restyle`)
 Reference-mockup restyle (deep navy, neon glass panels). Real data or an honest "not connected" state only.
 Previous exe kept as `apps\Jarvis.exe.bak-20261118-prephase2`.
