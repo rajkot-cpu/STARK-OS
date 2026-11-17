@@ -21,7 +21,7 @@ import urllib.parse
 import urllib.request
 
 UA = "JARVIS/3.1 (+provider check)"
-TESTS = ("gemini", "openai", "groq", "anthropic", "finnhub", "alphavantage", "kite", "alpaca", "binance")
+TESTS = ("gemini", "openai", "groq", "anthropic", "tavily", "brave", "serper", "serpapi", "finnhub", "alphavantage", "kite", "alpaca", "binance")
 _AI = {"gemini": ("Gemini", "JARVIS_GEMINI_API_KEY", ("GEMINI_API_KEY", "GOOGLE_API_KEY")),
        "openai": ("OpenAI", "JARVIS_OPENAI_API_KEY", ("OPENAI_API_KEY",)),
        "groq": ("Groq", "JARVIS_GROQ_API_KEY", ("GROQ_API_KEY",)),
@@ -79,6 +79,28 @@ def run(provider: str, root=None, get=_get) -> dict:
         st = r.get("state", "")
         return {"ok": st == "connected", "status": st, "latency_ms": round((time.perf_counter() - t0) * 1000, 1),
                 "detail": "models list reachable" if st == "connected" else ("key not set" if st == "missing_key" else st)}
+    if p in ("tavily", "brave", "serper", "serpapi"):
+        import web_search
+
+        env = dict(web_search.KEYED)[p]
+        k = _k(env)
+        if not k:
+            return {"ok": False, "status": "missing_key", "detail": f"{env} not set"}
+        if p == "serpapi":  # account endpoint: free, uses no search credit
+            code, d, ms = get("https://serpapi.com/account.json?api_key=" + urllib.parse.quote(k), {})
+            return _result(code, ms, "account read OK", bool(d and ("account_email" in d or "plan_id" in d
+                                                                     or "searches_per_month" in d)))
+        t0 = time.perf_counter()
+        try:
+            rows = web_search._KEYED_FN[p]("JARVIS connection test", 1, k)
+            ms = round((time.perf_counter() - t0) * 1000, 1)
+            return {"ok": True, "status": "connected", "latency_ms": ms,
+                    "detail": f"search OK ({len(rows)} result; uses 1 query credit)"}
+        except Exception as e:
+            ms = round((time.perf_counter() - t0) * 1000, 1)
+            msg = str(e)[:60]
+            st = "auth_error" if ("401" in msg or "403" in msg) else "error"
+            return {"ok": False, "status": st, "latency_ms": ms, "detail": msg}
     if p == "finnhub":
         k = _k("JARVIS_FINNHUB_API_KEY")
         if not k:

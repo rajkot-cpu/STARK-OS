@@ -49,8 +49,17 @@ def data_sources(root: Path) -> list[dict]:
         ws_ok = importlib.util.find_spec("ddgs") is not None
     except Exception:
         ws_ok = False
-    rows.append({"id": "web_search", "label": "Web search", "state": "connected" if ws_ok else "unavailable",
-                 "detail": "DuckDuckGo (no key), Gemini grounding fallback" if ws_ok else "ddgs package missing"})
+    try:
+        import web_search
+
+        names = web_search.chain_names("")
+    except Exception:
+        names = []
+    keyed = [n for n in names if n in ("tavily", "brave", "serper", "serpapi")]
+    detail = ("Fallback chain: " + (", ".join(keyed) + " → " if keyed else "")
+              + ("DuckDuckGo (ddgs) → " if ws_ok else "")
+              + "Bing RSS → DuckDuckGo HTML → Wikipedia → Google News RSS (all keyless) → Gemini grounding")
+    rows.append({"id": "web_search", "label": "Web search", "state": "connected", "detail": detail})
     try:
         from memory_index import build
 

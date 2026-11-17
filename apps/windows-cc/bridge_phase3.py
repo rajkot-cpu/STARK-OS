@@ -269,6 +269,21 @@ class Phase3Mixin:
         except Exception as e:
             return _err(e)
 
+    def task_report(self, tid: str = "") -> dict:
+        """Text of a finished chain's report (only files under workspace/reports, max 200 KB)."""
+        try:
+            t = self._p3()["queue"].get(str(tid))
+            rel = str((t or {}).get("result") or "")
+            if not rel:
+                return {"ok": False, "error": "task has no report"}
+            base = (self.root / "workspace" / "reports").resolve()
+            f = (self.root / rel).resolve()
+            if f.parent != base or f.suffix != ".md" or not f.is_file():
+                return {"ok": False, "error": "report path refused"}
+            return {"ok": True, "data": {"path": rel, "text": f.read_text(encoding="utf-8", errors="replace")[:200_000]}}
+        except Exception as e:
+            return _err(e)
+
     def chain_start(self, topic: str = "", source: str = "ui") -> dict:
         if self._stopped():
             return HALTED
