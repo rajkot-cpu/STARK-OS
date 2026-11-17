@@ -38,7 +38,7 @@ def _speakable(text: str, limit: int = 200) -> str:
     return cut[: end + 1] if end > 60 else cut.rsplit(" ", 1)[0] + "…"
 
 
-APP_VERSION = "3.0.0"
+APP_VERSION = "3.1.0"
 OPERATOR_NAME = "Dr. Chandan Kumar"
 
 
