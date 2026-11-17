@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import contextmanager
 import threading
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -37,10 +38,19 @@ class TaskQueue:
                 result TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT 'ui',
                 created TEXT NOT NULL, updated TEXT NOT NULL)""")
 
+    @contextmanager
     def _conn(self):
+        """Commit and CLOSE every connection (an unclosed handle locks the file on Windows)."""
         c = sqlite3.connect(str(self.path), timeout=10)
         c.row_factory = sqlite3.Row
-        return c
+        try:
+            yield c
+            c.commit()
+        except BaseException:
+            c.rollback()
+            raise
+        finally:
+            c.close()
 
     def recover(self) -> int:
         """Call once at start-up: RUNNING -> interrupted (never auto-resumed)."""

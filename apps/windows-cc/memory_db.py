@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import re
 import sqlite3
+from contextlib import contextmanager
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -57,10 +58,19 @@ class MemoryDB:
             except sqlite3.OperationalError:
                 self.fts = False
 
-    def _conn(self) -> sqlite3.Connection:
+    @contextmanager
+    def _conn(self):
+        """Commit and CLOSE every connection (an unclosed handle locks the file on Windows)."""
         c = sqlite3.connect(str(self.path), timeout=10)
         c.row_factory = sqlite3.Row
-        return c
+        try:
+            yield c
+            c.commit()
+        except BaseException:
+            c.rollback()
+            raise
+        finally:
+            c.close()
 
     # ---- write ----
     def add(self, kind: str, title: str, body: str, source: str = "", tags: str = "") -> int:
