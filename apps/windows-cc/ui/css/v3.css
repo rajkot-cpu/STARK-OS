@@ -166,7 +166,7 @@ body.voice-listening .vc-state { color: var(--ok); }
 #health-list li.ov-row { display: grid; grid-template-columns: 26px 1fr auto 8px; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid rgba(100,180,255,.08); font-size: 12px; }
 .ov-ic { width: 26px; height: 26px; padding: 5px; border-radius: 8px; color: var(--oc); background: color-mix(in srgb, var(--oc) 15%, transparent);
   box-shadow: 0 0 8px color-mix(in srgb, var(--oc) 35%, transparent); display: inline-flex; }
-.ov-k { color: #cfe8ff; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.ov-k { color: #cfe8ff; display: flex; flex-direction: column; gap: 3px; min-width: 0; overflow: hidden; white-space: nowrap; }
 .ov-v { color: #eaf9ff; font-weight: 600; font-size: 11.5px; text-align: right; white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .ov-bar { display: block; height: 3px; border-radius: 2px; background: rgba(167,123,255,.18); width: 100%; }
 .ov-bar span { display: block; height: 100%; border-radius: 2px; background: linear-gradient(90deg, #7d5cff, #c3a6ff); box-shadow: 0 0 6px #a77bff; }

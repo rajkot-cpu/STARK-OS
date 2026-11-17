@@ -19,8 +19,8 @@ function voiceLabel(muted) {
   const st = voiceNow();
   if (st === "listening") return ["Listening", "ok"];
   if (st === "speaking") return ["Speaking", "ok"];
-  if (voice.wakeEnabled && voice.wakeRunning) return ["Wake word on", "ok"];
-  if (voice.wakeEnabled) return ["Wake word stopped", "warn"];
+  if (voice.wakeEnabled && voice.wakeRunning) return ["Wake on", "ok"];
+  if (voice.wakeEnabled) return ["Wake stopped", "warn"];
   return ["Tap to talk", "off"];
 }
 function markSpeaking(text) {
