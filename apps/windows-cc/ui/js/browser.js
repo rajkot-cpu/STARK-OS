@@ -3,7 +3,7 @@ import { call } from "./bridge.js";
 import { esc } from "./v3.js";
 
 const $ = (id) => document.getElementById(id);
-let mounted = false, timer = 0, busy = false, shot = { w: 0, h: 0 };
+let mounted = false, timer = 0, busy = false, shot = { w: 0, h: 0 }, ticks = 0;
 
 function active() { return $("page-browser") && $("page-browser").classList.contains("active"); }
 
@@ -47,6 +47,7 @@ async function snap() {
       $("br-view").src = `data:image/jpeg;base64,${r.data.jpeg_b64}`;
       shot = { w: r.data.css_w || 0, h: r.data.css_h || 0 };
       $("br-empty").hidden = true;
+      if (/capture|not running/i.test($("br-msg").textContent)) msg("");
       if (document.activeElement !== $("br-url")) $("br-url").value = r.data.url || "";
     } else if (r.halted) {
       $("br-state").innerHTML = `<span class="tr-err">STOPPED — automation blocked</span>`;
@@ -58,7 +59,7 @@ async function snap() {
 
 function loop() {
   clearInterval(timer);
-  timer = setInterval(() => { if (active()) snap(); }, 1500);
+  timer = setInterval(() => { if (!active()) return; snap(); if (++ticks % 4 === 0) refreshStatus(); }, 1500);
 }
 
 async function act(fn, ...args) {
