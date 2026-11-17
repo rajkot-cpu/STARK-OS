@@ -11,6 +11,7 @@ for p in (_PANEL, _WIN, Path(__file__).resolve().parent):
         sys.path.insert(0, str(p))
 
 import panel_api  # noqa: E402
+from bridge_phase3 import Phase3Mixin  # noqa: E402
 import threading  # noqa: E402
 
 
@@ -59,7 +60,7 @@ def log_error(root, source: str, message: str, level: str = "error") -> None:
 HALTED = {"ok": False, "halted": True, "error": "Emergency STOP is active. Type RESUME (or press Resume) to continue."}
 
 
-class BridgeApi:
+class BridgeApi(Phase3Mixin):
     def __init__(self, root: Path):
         self.root = Path(root)
         self.panel = panel_api.Panel(self.root)
@@ -87,7 +88,8 @@ class BridgeApi:
         self.halt.on_stop("agents_stopped", lambda: self._hub.stop_all("emergency stop") if getattr(self, "_hub", None) else 0)
         self.halt.on_stop("wake_word", self._halt_wake)
         self.halt.on_stop("speech", self._halt_speech)
-        self.halt.on_stop("trading", lambda: "no trading module is active in this build; nothing to stop")
+        self.halt.on_stop("trading", lambda: "paper mode only; live adapter off; nothing to stop")
+        self._p3_halt_hooks(self.halt)
 
     def _halt_wake(self):
         if getattr(self, "_wake", None) and getattr(self._wake, "running", False):
@@ -756,6 +758,10 @@ class BridgeApi:
             return {"ok": False, "error": str(e)}
 
     def shutdown(self) -> None:
+        try:
+            self.stop_local_api()
+        except Exception:
+            pass
         try:
             self._halt_ctl().stop_watch()
             if getattr(self, "_hotkey", None):
