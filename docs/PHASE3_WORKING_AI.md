@@ -89,3 +89,30 @@ No hardcoded secrets found (`.env.example` only).
 - None of it is wired into the app. The Phase 3 modules above supersede those parts.
 - It also holds business/costs/documents/backups/services modules that Phase 3 does not cover.
 - Decide later whether to keep or delete it. It still causes the pre-existing `test_upgrade_core` failure on the PC.
+
+
+## Phase 3b — web search fallback chain (3.1.1)
+
+`web_search.py` no longer depends on one service. Order (first with results wins; later sources top up
+to `max_results`, at most ~half from any one engine):
+
+| # | Source | Key | Notes |
+|---|---|---|---|
+| 1 | Tavily / Brave Search / Serper / SerpAPI | optional, Credential Manager (`JARVIS_TAVILY_API_KEY`, `JARVIS_BRAVE_SEARCH_API_KEY`, `JARVIS_SERPER_API_KEY`, `JARVIS_SERPAPI_API_KEY`) | Only used when a key is saved. Settings → Keys & brokers → **Test** (SerpAPI: free account read; others: one 1-result query). |
+| 2 | DuckDuckGo (`ddgs`, backends yahoo → bing → google) | none | |
+| 3 | Bing web RSS | none | Off-topic hits filtered by key-term match. |
+| 4 | Google News RSS | none | Moved up for news/market queries. |
+| 5 | DuckDuckGo HTML | none | Ads skipped, `uddg` redirect decoded. |
+| 6 | Wikipedia (MediaWiki API) | none | |
+| 7 | Gemini Google-search grounding | Gemini key | Only if all above return nothing. Key sent in a header. |
+
+Per-source timeout 8 s, overall 30 s, one retry with backoff on network/5xx/429. Results are deduplicated
+(URL without `www.`/`utm_*`, and title), only http(s) URLs, each tagged with the engine that found it. If every
+source fails, the call returns `ok:false` with each source's error — nothing is made up; the chain report then
+says "No web sources were returned (…why…)".
+
+Reports: the Research and Writer prompts require `[n]` citations; the Sources list shows each URL and engine;
+the task records `engines`, `search_tried` and `cited`. Tasks page → **View report** shows the report text.
+
+LLM routing: a provider that returns HTTP 429 is skipped for 120 s, so Gemini rate limits fall through to
+OpenAI/Groq and then local Ollama immediately.

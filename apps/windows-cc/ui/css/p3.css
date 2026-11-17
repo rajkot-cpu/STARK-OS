@@ -41,3 +41,7 @@
 #p3-keys .tr-tab td { vertical-align: middle; }
 #p3-local, #p3-api { min-width: 0; }
 #p3-api code, #p3-api .muted { overflow-wrap: anywhere; }
+
+.task-report { white-space: pre-wrap; word-break: break-word; max-height: 420px; overflow: auto; margin: 8px 0 0;
+  padding: 10px 12px; font: 12px/1.5 ui-monospace, Consolas, monospace; background: rgba(0, 20, 40, .55);
+  border: 1px solid rgba(80, 200, 255, .18); border-radius: 8px; color: #cfe9ff; }

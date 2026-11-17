@@ -19,14 +19,14 @@ CHAIN = ("research", "analyst", "writer")
 LABEL = {"research": "Research", "analyst": "Analyst", "writer": "Writer"}
 
 SYS_RESEARCH = ("You are the Research agent of JARVIS. Using ONLY the numbered sources and memory notes given, "
-                "write concise research notes (bullets) on the topic. Cite sources as [n]. If the sources do not "
-                "cover something, say so. Never invent facts, numbers or URLs.")
+                "write concise research notes (bullets) on the topic. End every factual bullet with its source number(s) "
+                "like [1] or [2][4], matching the numbered sources. If the sources do not cover something, say so. Never invent facts, numbers or URLs.")
 SYS_ANALYST = ("You are the Analyst agent of JARVIS. From the research notes, produce: Key findings (ranked), "
                "Implications, Risks/unknowns, and a confidence level (low/medium/high) with one-line reasons. "
                "Keep [n] citations. Do not add facts that are not in the notes.")
 SYS_WRITER = ("You are the Writer agent of JARVIS. Write a clear markdown report for Dr. Chandan Kumar with: "
               "a title line starting with '# ', an Executive summary (3-5 bullets), Findings, Analysis, and Next steps. "
-              "Keep [n] citations. Do not write a Sources section (it is appended automatically). Do not invent facts.")
+              "Keep the [n] citations from the notes on every factual statement. Do not write a Sources section (it is appended automatically). Do not invent facts.")
 
 
 def _slug(text: str) -> str:
@@ -61,7 +61,7 @@ class Orchestrator:
             return self._search(query)
         from agent_tools import AgentTools
 
-        return AgentTools(self.root, actor="agent-research").web_search(query, max_results=6)
+        return AgentTools(self.root, actor="agent-research").web_search(query, max_results=8)
 
     # ---- control ----
     def submit(self, topic: str, source: str = "ui") -> dict:
@@ -133,7 +133,9 @@ class Orchestrator:
             sources = (sr.get("data") or {}).get("results") if sr.get("ok") else None
             if sources is None and sr.get("ok"):
                 sources = sr.get("data") if isinstance(sr.get("data"), list) else []
-            sources = [s for s in (sources or []) if isinstance(s, dict) and s.get("url")][:6]
+            sources = [s for s in (sources or []) if isinstance(s, dict) and s.get("url")][:8]
+            engines = list((sr.get("data") or {}).get("engines") or []) if sr.get("ok") else []
+            tried = [a.get("source") for a in ((sr.get("data") or {}) if sr.get("ok") else sr).get("attempts") or []]
             summary = str(((sr.get("data") or {}) if sr.get("ok") else {}).get("summary") or "")[:1500]
             mem = []
             try:
@@ -141,14 +143,15 @@ class Orchestrator:
             except Exception:
                 pass
             self._check(ev)
-            src_txt = "\n".join(f"[{i+1}] {s.get('title','')}: {s.get('snippet','')} ({s['url']})"
+            src_txt = "\n".join(f"[{i+1}] {s.get('title','')}: {s.get('snippet','')} ({s['url']}; via {s.get('source','web')})"
                                 for i, s in enumerate(sources)) or "(web search returned nothing)"
             if summary:
                 src_txt += f"\n\nSearch summary (Google grounding): {summary}"
             mem_txt = "\n".join(f"- {m['title']}: {m['snippet']}" for m in mem) or "(no related memory)"
             r1 = self.complete(f"Topic: {topic}\n\nSources:\n{src_txt}\n\nMemory notes:\n{mem_txt}", SYS_RESEARCH)
-            self._step_done(tid, steps, "research", r1, t0, extra={"sources": len(sources),
-                                                                   "search_error": "" if sr.get("ok") else str(sr.get("error", ""))[:120]})
+            self._step_done(tid, steps, "research", r1, t0, extra={"sources": len(sources), "engines": engines,
+                                                                   "search_tried": tried,
+                                                                   "search_error": "" if sr.get("ok") else str(sr.get("error", ""))[:300]})
             # 2. Analyst
             self._check(ev)
             t0 = time.time()
@@ -165,8 +168,13 @@ class Orchestrator:
                 body = f"# {topic}\n\n{body}"
             when = datetime.now(_IST)
             prov = ", ".join(f"{LABEL[s['agent']]}: {s['provider']}" for s in steps)
-            body += "\n\n## Sources\n" + ("\n".join(f"{i+1}. [{s.get('title') or s['url']}]({s['url']})"
-                                                    for i, s in enumerate(sources)) or "_No web sources were returned._")
+            cited = sorted({int(n) for n in re.findall(r"\[(\d{1,2})\]", body) if 0 < int(n) <= len(sources)})
+            if sources and not cited:
+                body += ("\n\n> Note: the model did not cite inline; the sources it was given are listed below.")
+            body += "\n\n## Sources\n" + ("\n".join(f"{i+1}. [{s.get('title') or s['url']}]({s['url']}) — via {s.get('source', 'web')}"
+                                                    for i, s in enumerate(sources))
+                                          or "_No web sources were returned_ (" + (str(sr.get("error", ""))[:300] or "search failed") + ").")
+            steps[-1]["cited"] = len(cited)
             body += f"\n\n---\n_Generated by JARVIS chain Research → Analyst → Writer on {when:%d %b %Y %H:%M} IST ({prov})._\n"
             out_dir = self.root / "workspace" / "reports"
             out_dir.mkdir(parents=True, exist_ok=True)

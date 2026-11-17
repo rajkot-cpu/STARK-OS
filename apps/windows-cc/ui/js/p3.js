@@ -263,6 +263,9 @@ export function renderTasksP3(el) {
   loadTasks();
 }
 
+let openReport = "";
+let reportText = "";
+
 export async function loadTasks() {
   const el = $("task-list");
   if (!el) return;
@@ -271,12 +274,17 @@ export async function loadTasks() {
   const ts = r.data.tasks;
   if (!ts.length) { el.innerHTML = `<p class="muted small">No tasks yet.</p>`; return; }
   el.innerHTML = ts.map((t) => {
-    const steps = (t.steps || []).map((s) => `<span class="chip">${esc(s.agent)} · ${esc(s.provider)} · ${s.seconds}s</span>`).join("");
+    const steps = (t.steps || []).map((s) => {
+      let extra = "";
+      if (s.agent === "research") extra = s.sources ? ` · ${s.sources} sources via ${esc((s.engines || []).join(", "))}` : ` · <span class="tr-err">no web sources</span>`;
+      if (s.agent === "writer" && s.cited !== undefined) extra = ` · ${s.cited} cited`;
+      return `<span class="chip" title="${esc(s.search_error || "")}">${esc(s.agent)} · ${esc(s.provider)} · ${s.seconds}s${extra}</span>`;
+    }).join("");
     const btns = ["error", "interrupted", "cancelled"].includes(t.state) && t.state !== "cancelled" ? `<button class="set-btn" data-act="retry" data-id="${t.id}">Retry</button>` : (["running", "queued"].includes(t.state) ? `<button class="set-btn" data-act="cancel" data-id="${t.id}">Cancel</button>` : "");
-    const res = t.result ? `<button class="set-btn" data-act="open" data-path="workspace/reports">Open reports</button> <code class="small">${esc(t.result)}</code>` : "";
+    const res = t.result ? `<button class="set-btn" data-act="view" data-id="${t.id}">View report</button> <button class="set-btn" data-act="open" data-path="workspace/reports">Open folder</button> <code class="small">${esc(t.result)}</code>` : "";
     return `<div class="task-row st-${t.state}"><div class="task-top"><b>${esc(t.title)}</b><span class="task-st">${esc(t.state)}${t.state === "running" ? ` · step ${t.step}/3` : ""}</span></div>
       <div class="small muted">${esc(t.kind)} · ${esc(t.source)} · ${esc((t.created || "").replace("T", " ").slice(0, 16))} IST${t.error ? ` · <span class="tr-err">${esc(t.error)}</span>` : ""}</div>
-      <div class="task-steps">${steps}</div><div>${res} ${btns}</div></div>`;
+      <div class="task-steps">${steps}</div><div>${res} ${btns}</div>${openReport === t.id ? `<pre class="task-report" id="rep-${t.id}">${esc(reportText || "Loading…")}</pre>` : ""}</div>`;
   }).join("");
 }
 
@@ -291,7 +299,12 @@ async function onTasksClick(e) {
   } else if (act === "retry") await call("task_retry", b.dataset.id);
   else if (act === "cancel") await call("task_cancel", b.dataset.id);
   else if (act === "open") await call("open_folder", b.dataset.path);
-  loadTasks();
+  else if (act === "view") {
+    openReport = openReport === b.dataset.id ? "" : b.dataset.id;
+    reportText = "";
+    if (openReport) { const r = await call("task_report", openReport); reportText = r.ok ? r.data.text : r.error; }
+  }
+  await loadTasks();
 }
 
 // ---------------- Memory search ----------------

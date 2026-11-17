@@ -4,6 +4,8 @@
 ai_mode (cc_settings): hybrid (default) | local_first | cloud_only.
 cheap=True (classification, short summaries) tries the local model first in hybrid mode,
 so routine work costs nothing and still works offline. Never logs prompts or keys.
+A provider that answers HTTP 429 (rate limit) is skipped for COOLDOWN_S, so the next provider in the
+plan (e.g. Gemini 429 -> OpenAI/Groq -> local Ollama) answers immediately instead.
 """
 from __future__ import annotations
 
@@ -22,6 +24,17 @@ CLOUD = (
     ("openai", "JARVIS_OPENAI_API_KEY", ("OPENAI_API_KEY",)),
     ("groq", "JARVIS_GROQ_API_KEY", ("GROQ_API_KEY",)),
 )
+
+
+COOLDOWN_S = 120.0
+_cooldown: dict[str, float] = {}  # provider -> monotonic time until which it is skipped (after HTTP 429)
+
+
+def cooling(name: str) -> float:
+    """Seconds left before a rate-limited provider is tried again (0 = usable)."""
+    import time
+
+    return max(0.0, _cooldown.get(name, 0.0) - time.monotonic())
 
 
 class Halted(RuntimeError):
@@ -120,6 +133,9 @@ def complete(prompt: str, system: str = "", root=None, *, cheap: bool = False, m
     for name in plan(root, cheap=cheap):
         if _halted():
             return {"ok": False, "halted": True, "text": "", "provider": "", "errors": errors + ["Emergency STOP is active"]}
+        if name != "ollama" and cooling(name) > 0:
+            errors.append(f"{name}: rate-limited (HTTP 429), skipped for {int(cooling(name))}s")
+            continue
         try:
             if name == "ollama":
                 if not local_llm.ready(s["local_model"]):
@@ -137,7 +153,12 @@ def complete(prompt: str, system: str = "", root=None, *, cheap: bool = False, m
                 return {"ok": True, "text": text, "provider": name, "errors": errors}
             errors.append(f"{name}: empty reply")
         except Exception as e:
-            errors.append(f"{name}: {str(e)[:120]}")
+            msg = str(e)[:120]
+            if "HTTP 429" in msg:
+                import time
+
+                _cooldown[name] = time.monotonic() + COOLDOWN_S  # fall through now, skip it for a while
+            errors.append(f"{name}: {msg}")
     if not errors:
         errors.append("no AI provider: add a cloud key in Settings or pull a local model in Ollama")
     return {"ok": False, "text": "", "provider": "", "errors": errors}

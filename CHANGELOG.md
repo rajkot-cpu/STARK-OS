@@ -1,5 +1,10 @@
 # Changelog
 
+## v3.1.1 — 2026-11-18 — Phase 3b: search fallback chain
+- Web search fallback chain: keyed Tavily/Brave/Serper/SerpAPI (optional) → ddgs → Bing RSS → Google News RSS → DuckDuckGo HTML → Wikipedia → Gemini grounding; retries, per-source timeouts, dedupe, real URLs only.
+- Chain reports cite sources with engine names; Tasks page shows sources/engines/citations and a report viewer.
+- LLM router: HTTP 429 cools a provider down for 120 s (Gemini → Groq/Ollama fallthrough).
+
 ## v3.1.0 — 2026-11-18 — Phase 3: working AI
 - Keys & brokers: added Finnhub, Alpha Vantage, Zerodha Kite, Alpaca (paper), Binance slots with read-only **Test** checks (idea from v8 api_hub_manager; keys only in Credential Manager, no orders).
 - Local AI: Ollama `jarvis-local` (qwen2.5:3b, CPU) in a hybrid router (cloud first, local fallback/offline; cheap tasks local first) for chat, agents and chains.

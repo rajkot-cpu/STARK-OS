@@ -13,23 +13,24 @@ import web_search  # noqa: E402
 class WebSearchTests(unittest.TestCase):
     def test_ddgs_results(self):
         rows = [{"title": "T", "url": "https://x", "snippet": "s"}]
-        r = web_search.search("q", ddgs_fn=lambda q, n: rows)
+        r = web_search.search("q", fetchers=[("ddgs", lambda q, n: rows)])
         self.assertTrue(r["ok"])
         self.assertEqual(r["data"]["engine"], "ddgs")
 
     def test_falls_back_to_gemini_grounding(self):
         def boom(q, n):
             raise TimeoutError("slow")
-        r = web_search.search("q", gemini_key="k", ddgs_fn=boom,
-                              grounded_fn=lambda q, k: {"summary": "S", "results": []})
+        r = web_search.search("q", gemini_key="k", fetchers=[("ddgs", boom), ("bing", boom)],
+                              grounded_fn=lambda q, k: {"summary": "S", "results": []}, sleep=lambda s: None)
         self.assertTrue(r["ok"])
         self.assertEqual(r["data"]["engine"], "gemini_google_search")
 
     def test_timeout_is_short(self):
         import time
-        with mock.patch.object(web_search, "OVERALL_TIMEOUT", 0.2):
+        with mock.patch.object(web_search, "OVERALL_TIMEOUT", 0.6), mock.patch.object(web_search, "SOURCE_TIMEOUT", 0.2):
             t = time.time()
-            r = web_search.search("q", ddgs_fn=lambda q, n: time.sleep(3))
+            r = web_search.search("q", fetchers=[("ddgs", lambda q, n: time.sleep(3)), ("bing", lambda q, n: time.sleep(3))],
+                                  sleep=lambda s: None)
             self.assertLess(time.time() - t, 1.5)
         self.assertFalse(r["ok"])
 
@@ -40,7 +41,7 @@ class WebSearchTests(unittest.TestCase):
         from agent_tools import AgentTools
         import tempfile
         with tempfile.TemporaryDirectory() as d, \
-             mock.patch.object(web_search, "_ddgs", lambda q, n: [{"title": "a", "url": "https://a", "snippet": ""}]):
+             mock.patch.object(web_search, "default_chain", lambda q, keys=None: [("ddgs", lambda q, n: [{"title": "a", "url": "https://a", "snippet": ""}])]):
             r = AgentTools(Path(d)).call("web_search", {"query": "x"})
         self.assertTrue(r["ok"])
         self.assertNotIn("needs_r3", r)
@@ -115,5 +116,5 @@ class DdgsBackendTests(unittest.TestCase):
         mod.DDGS = Fake
         with mock.patch.dict(sys.modules, {"ddgs": mod}):
             rows = web_search._ddgs("q", 3)
-        self.assertEqual(tried, ["yahoo", "auto"])
+        self.assertEqual(tried, ["yahoo", "bing"])
         self.assertEqual(rows[0]["url"], "https://h")
