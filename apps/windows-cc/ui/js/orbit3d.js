@@ -290,6 +290,28 @@ export function mountAgentOrbit(canvas, opts = {}) {
   const atmoMat = own(atmosphereMaterial());
   const atmo = new THREE.Mesh(own(new THREE.SphereGeometry(1.32, 48, 32)), atmoMat);
   coreGroup.add(atmo);
+  // v3: thin lat-long wireframe globe around the core (reference mockup "wireframe globe")
+  const globe = (() => {
+    const R = 1.2, pts = [];
+    for (let la = -60; la <= 60; la += 30) {          // latitude rings
+      const y = Math.sin(la * Math.PI / 180) * R, r = Math.cos(la * Math.PI / 180) * R;
+      for (let k = 0; k < 72; k++) {
+        const a0 = (k / 72) * Math.PI * 2, a1 = ((k + 1) / 72) * Math.PI * 2;
+        pts.push(Math.cos(a0) * r, y, Math.sin(a0) * r, Math.cos(a1) * r, y, Math.sin(a1) * r);
+      }
+    }
+    for (let lo = 0; lo < 180; lo += 30) {            // meridians
+      const c = Math.cos(lo * Math.PI / 180), s2 = Math.sin(lo * Math.PI / 180);
+      for (let k = 0; k < 72; k++) {
+        const a0 = (k / 72) * Math.PI * 2, a1 = ((k + 1) / 72) * Math.PI * 2;
+        pts.push(Math.cos(a0) * R * c, Math.sin(a0) * R, Math.cos(a0) * R * s2, Math.cos(a1) * R * c, Math.sin(a1) * R, Math.cos(a1) * R * s2);
+      }
+    }
+    const g = own(new THREE.BufferGeometry());
+    g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(pts), 3));
+    return new THREE.LineSegments(g, own(new THREE.LineBasicMaterial({ color: 0x5fc8ff, ...ADD, opacity: 0.16 })));
+  })();
+  coreGroup.add(globe);
 
   // bloom: layered additive sprites + a thin anamorphic streak (film lens look)
   const bloomWide = sprite(CYAN, 0.24); bloomWide.scale.setScalar(5.6); coreGroup.add(bloomWide);
@@ -607,6 +629,7 @@ export function mountAgentOrbit(canvas, opts = {}) {
     hot.scale.setScalar(pulse.scale * (1 + 0.16 * vAmp));
     hotMat.uniforms.uI.value = 0.9 + 0.25 * pulse.beat * pulse.intensity + 0.35 * vAmp;
     plasma.rotation.y += 0.06 * spin * dt;
+    globe.rotation.y += 0.035 * spin * dt;
     plasma.scale.setScalar(1 + 0.012 * breathe + 0.03 * pulse.beat * pulse.intensity + 0.05 * vAmp);
     plasmaMat.uniforms.uI.value = 0.85 + 0.3 * pulse.intensity + 0.45 * vAmp;
     plasmaMat.uniforms.uAmp.value = vAmp;
