@@ -1,8 +1,8 @@
 // apps/windows-cc/ui/js/app.js
 import { call, uiLog, whenReady } from "./bridge.js";
-import { mountNavIcons } from "./icons3d.js";
 import { mountCore } from "./core3d.js";
 import { mountAgentOrbit } from "./orbit3d.js";
+import * as v3 from "./v3.js";
 
 let core3d = null;
 let agentsOrbit = null;
@@ -27,6 +27,10 @@ function pushVoice() {
   voice.shown = st;
   if (core3d && core3d.setVoice) core3d.setVoice(st);
   if (agentsOrbit && agentsOrbit.setVoice) agentsOrbit.setVoice(st);
+  document.body.classList.toggle("voice-listening", st === "listening");
+  document.body.classList.toggle("voice-speaking", st === "speaking");
+  const sub = document.getElementById("talk-sub");
+  if (sub) sub.textContent = st === "listening" ? "I am listening…" : (st === "speaking" ? "Speaking…" : "Tap to talk");
   const el = document.getElementById("hud-voice");
   if (el) {
     el.textContent = st.toUpperCase();
@@ -65,37 +69,47 @@ function setRoute(name) {
   document.querySelectorAll(".page").forEach((p) => {
     p.classList.toggle("active", p.id === `page-${name}`);
   });
+  if (name === "trading") v3.renderTrading($("trading-grid"));
+  if (name === "agents") renderDiagram();
+  if (name === "safety" || name === "security") refreshSafety();
 }
 
 function tickClock() {
   const d = new Date();
-  $("clock").textContent = d.toLocaleString("en-IN", {
-    weekday: "long", year: "numeric", month: "long", day: "numeric",
-    hour: "2-digit", minute: "2-digit", second: "2-digit",
-  }) + " IST";
+  if ($("clock-date")) $("clock-date").textContent = d.toLocaleDateString("en-IN", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+  $("clock").innerHTML = d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true })
+    .replace(/\s?(AM|PM)/, ' <small>$1 IST</small>');
 }
 
 function renderHealth(status, agents, llms, mem) {
   const connected = (llms || []).filter((p) => p.state === "connected").length;
   const active = (agents || []).filter((a) => a.state === "active").length;
   const muted = !!(status && status.muted);
+  const halted = !!(status && status.halted);
+  const ram = lastMetrics && lastMetrics.ram_total_gb ? lastMetrics : null;
   const items = [
-    ["AI Core", status?.system_status || "—"],
-    ["Memory", `${mem?.nodes ?? 0} nodes`],
-    ["Voice", muted ? "Muted" : "Online"],
-    ["Agents", `${active} running`],
-    ["LLMs", `${connected} connected`],
-    ["System", status?.quiet_hours ? "Quiet hours" : (status?.policy_ok ? "Optimal" : "Check POLICY")],
+    ["core", "#38d4ff", "AI Core", halted ? "Halted" : (status?.policy_ok ? "Active" : (status?.system_status || "—")), halted ? "bad" : (status?.policy_ok ? "ok" : "warn"), ""],
+    ["brain", "#a77bff", "Memory", ram ? `${ram.ram_used_gb} GB / ${ram.ram_total_gb} GB` : "—", "ok",
+      ram ? `<i class="ov-bar"><span style="width:${Math.round(ram.ram_pct)}%"></span></i>` : ""],
+    ["mic", "#3dff9a", "Voice", muted ? "Muted" : (voiceNow() === "idle" ? "Online" : voiceNow() === "listening" ? "Listening" : "Speaking"), muted ? "warn" : "ok", ""],
+    ["agents", "#ff9d2e", "Agents", `${active} running`, active ? "ok" : "off", ""],
+    ["cpu", "#5b8cff", "LLMs", `${connected} connected`, connected ? "ok" : "bad", ""],
+    ["shield", "#19e6c1", "System", halted ? "STOP active" : (status?.quiet_hours ? "Quiet hours" : (status?.policy_ok ? "Optimal" : "Check POLICY")), halted ? "bad" : (status?.policy_ok ? "ok" : "warn"), ""],
   ];
-  $("health-list").innerHTML = items.map(([k, v]) => `<li><span>${k}</span><strong>${v}</strong></li>`).join("");
+  $("health-list").innerHTML = items.map(([ic, col, k, v, tone, extra]) =>
+    `<li class="ov-row"><span class="ov-ic" style="--oc:${col}">${v3.icon(ic)}</span><span class="ov-k">${k}${extra}</span><strong class="ov-v">${esc(v)}</strong><i class="dot ${tone}"></i></li>`).join("");
   // Quiet hours is a normal, scheduled state (no proactive work / notifications) -> calm amber, not red.
   // Only an unapproved POLICY is an error.
   const pill = $("sys-pill");
   const quiet = !!status?.quiet_hours && !!status?.policy_ok;
   const bad = !status?.policy_ok;
-  pill.textContent = bad ? (status?.system_status || "CHECK POLICY") : (quiet ? "Quiet hours" : "Optimal");
+  const low = lastReadyPct !== null && lastReadyPct < 50;
+  pill.innerHTML = halted ? "System Status: <b>■ HALTED</b>" : bad ? `System Status: <b>${esc(status?.system_status || "CHECK POLICY")}</b>`
+    : (quiet ? "System Status: <b>Quiet hours</b>" : (low ? "System Status: <b>DEGRADED</b>" : "System Status: <b>✓ OPTIMAL</b>"));
+  pill.classList.toggle("halted", halted);
+  pill.classList.toggle("low", !halted && !bad && !quiet && low);
   pill.title = quiet ? "Quiet hours (POLICY.yaml): Jarvis won't start scheduled work or speak up on its own. Everything you ask still works." : "";
-  pill.classList.toggle("bad", bad);
+  pill.classList.toggle("bad", bad || halted);
   pill.classList.toggle("quiet", quiet);
   const sys = $("hud-sys");
   if (sys) {
@@ -104,8 +118,18 @@ function renderHealth(status, agents, llms, mem) {
   }
 }
 
+let lastReadyPct = null;
+let lastMetrics = null;
+const cpuHist = [];
+let lastFeedItems = [];
+let lastLocalAi = null;
+let lastSources = null;
+let lastProviders = [];
+let lastStatus = null;
+let slowAt = 0;
 function renderReadiness(data) {
   const pct = Math.max(0, Math.min(100, Math.round(Number(data?.score_pct) || 0)));
+  lastReadyPct = pct;
   const ring = $("ready-ring");
   const num = $("g-ready");
   if (num) num.textContent = String(pct);
@@ -214,6 +238,11 @@ function renderAgents(agents) {
   if (agentsOrbit) agentsOrbit.update(lastAgentsList);
   if (core3d && core3d.update) core3d.update(lastAgentsList);
   renderOrbitDetail();
+  v3.renderAgentsMini($("agents-mini"), lastAgentsList, (id) => selectAgent(id, true));
+  renderDiagram();
+  const needs = lastAgentsList.filter((a) => a.pending || a.state === "error" || String(a.detail || "").startsWith("needs_r3:")).length;
+  const bc = $("bell-count");
+  if (bc) { bc.textContent = String(needs); bc.classList.toggle("hidden", !needs); }
   // Keep any goal the operator is typing across the 3s refresh.
   document.querySelectorAll("[data-goal-for]").forEach((el) => { goalDrafts[el.dataset.goalFor] = el.value; });
   const focused = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.goalFor : null;
@@ -257,7 +286,6 @@ function renderAgents(agents) {
       </button>
     </div>`;
   }).join("");
-  $("agents-grid").innerHTML = html;
   $("agents-page").innerHTML = html;
   document.querySelectorAll("[data-goal-for]").forEach((el) => {
     const v = goalDrafts[el.dataset.goalFor];
@@ -350,27 +378,52 @@ function renderFeed(items, filter) {
     const s = JSON.stringify(it).toLowerCase();
     return !q || s.includes(q);
   }).slice().reverse();
+  lastFeedItems = items || [];
   $("feed-list").innerHTML = rows.map((it) => {
-    const t = shortTime(it.ts_ist || it.ts_utc || it.t || it.time || "");
-    const msg = it.detail || it.msg || (it.action ? `${it.task ? it.task + " · " : ""}${it.action}${it.result ? " — " + it.result : ""}` : "") || it.raw || JSON.stringify(it);
-    return `<div class="feed-item"><div class="t">${esc(t)}</div><div class="msg">${esc(msg)}</div></div>`;
+    const v = v3.feedView(it);
+    return `<div class="feed-item fx"><span class="fx-ic c-${v.color}">${v3.icon(v.icon)}</span><div class="fx-body"><div class="fx-top"><b>${esc(v.title)}</b><span class="t">${esc(shortTime(v.time))}</span></div><div class="msg">${esc(v.sub.slice(0, 160))}</div></div></div>`;
   }).join("") || `<div class="muted">No audit events yet.</div>`;
   $("conv-page").innerHTML = $("feed-list").innerHTML;
+  const today = lastFeedItems.filter((it) => v3.isToday(it.time || it.ts_ist)).length;
+  if ($("badge-conv")) $("badge-conv").textContent = String(today);
+  v3.renderMission($("mission"), lastFeedItems, shortTime);
 }
 
 function renderMetrics(m) {
   if (!m) return;
+  lastMetrics = m;
   $("g-cpu").textContent = Math.round(m.cpu_pct ?? 0);
   $("g-ram").textContent = Math.round(m.ram_pct ?? 0);
   $("g-disk").textContent = Math.round(m.disk_pct ?? 0);
+  v3.setRing("rg-cpu", m.cpu_pct); v3.setRing("rg-ram", m.ram_pct); v3.setRing("rg-disk", m.disk_pct);
+  // network ring: share of 100 Mbit/s (12.5 MB/s); the label is the real rate
+  v3.setRing("rg-net", m.net_bps == null ? 0 : (m.net_bps / 13107200) * 100);
+  const rate = v3.fmtRate(m.net_bps);
+  if ($("g-net")) $("g-net").textContent = rate;
+  if ($("ft-net")) $("ft-net").textContent = m.net_bps == null ? "measuring…" : rate;
+  if ($("g-uptime")) $("g-uptime").textContent = m.uptime_s != null ? v3.fmtUptime(m.uptime_s) : "—";
+  cpuHist.push(Number(m.cpu_pct) || 0);
+  if (cpuHist.length > 40) cpuHist.shift();
+  v3.spark($("cpu-spark"), cpuHist);
 }
 
 function renderMemory(mem) {
   const nodes = mem?.nodes ?? 0;
   const edges = mem?.edges ?? 0;
   const sources = (mem?.sources || []).join(", ") || "none";
-  $("memory-stats").innerHTML = `<div>${nodes} nodes · ${edges} edges</div><div class="muted">Sources: ${sources}</div>`;
-  $("memory-page").innerHTML = $("memory-stats").innerHTML;
+  const last = (mem?.recent || [])[0];
+  $("memory-stats").innerHTML = `<div class="mi-big"><b>${nodes}</b> memory files</div><div>${v3.fmtBytes(mem?.bytes)} indexed · ${edges} links</div>` +
+    `<div class="muted">Sources: ${esc(sources)}</div>${last ? `<div class="muted">Latest: ${esc(last)}</div>` : ""}`;
+  $("memory-page").innerHTML = `<div class="muted small">Indexed from STATE.md, journal, memory, notes and reports in the Jarvis folder. Counts are live; nothing here is sample data.</div>`;
+  v3.renderMemoryMap($("mem-svg"), mem);
+  const bys = Object.entries(mem?.by_source || {});
+  const mx = Math.max(1, ...bys.map(([, n]) => n));
+  if ($("mf-an")) $("mf-an").innerHTML = bys.length ? bys.map(([k, n]) => `<div class="mf-bar"><span>${esc(k)}</span><i><b style="width:${(n / mx) * 100}%"></b></i><em>${n}</em></div>`).join("") : `<span class="muted">No memory sources found yet.</span>`;
+  const found = (mem?.sources || []).length, cand = mem?.candidates || 5;
+  if ($("mf-ring")) { $("mf-ring").style.setProperty("--pct", String(Math.round((found / cand) * 100))); $("mf-ring-n").textContent = `${found}/${cand}`; }
+  if ($("mf-ring-t")) $("mf-ring-t").textContent = "memory sources present";
+  const memAgent = (lastAgentsList || []).find((a) => a.id === "memory");
+  if ($("mf-proc")) $("mf-proc").innerHTML = `<div>Memory agent: <b>${esc(memAgent ? memAgent.state : "—")}</b></div><div>Agents active: <b>${(lastAgentsList || []).filter((a) => a.state === "active").length}</b></div><div class="muted">${esc(memAgent && memAgent.goal ? "Goal: " + memAgent.goal.slice(0, 80) : "No memory task running.")}</div>`;
   $("knowledge-page").innerHTML = `<p class="muted">Indexed sources: ${sources}</p>`;
 }
 
@@ -379,19 +432,18 @@ function renderLlms(providers) {
   const rank = (n) => { const i = ["gemini", "openai", "groq"].indexOf(String(n || "").toLowerCase()); return i < 0 ? 9 : i; };
   const live = (providers || []).filter((p) => p.state === "connected").sort((a, b) => rank(a.name) - rank(b.name))[0];
   if ($("hud-provider")) $("hud-provider").textContent = live ? String(live.name).toUpperCase() : "OFFLINE";
-  $("llm-grid").innerHTML = (providers || []).map((p) => `
-    <div class="llm ${p.state}">
-      <span>${p.name}</span>
-      <span>${p.state}</span>
-    </div>`).join("") || `<div class="muted">No providers configured.</div>`;
+  lastProviders = providers || [];
+  v3.renderLlmRows($("llm-grid"), lastProviders, lastLocalAi);
+  v3.renderLlmRows($("set-providers"), lastProviders, lastLocalAi);
+  const nKey = lastProviders.filter((p) => p.state !== "missing_key").length;
+  if ($("prov-keys")) $("prov-keys").textContent = `${nKey} cloud provider key(s) set · local: ${lastLocalAi && lastLocalAi.ollama ? ({ ready: "Ollama ready", no_models: "Ollama installed, no models", not_running: "Ollama not running", not_installed: "no Ollama" })[lastLocalAi.ollama.state] || "—" : "checking…"}`;
 }
 
 function renderTimeline(briefText) {
-  const lines = (briefText || "").split("\n").filter(Boolean).slice(0, 12);
+  const lines = (briefText || "").split("\n").filter(Boolean).slice(0, 40);
   $("timeline").innerHTML = lines.length
-    ? lines.map((l) => `<div class="feed-item">${l}</div>`).join("")
+    ? lines.map((l) => `<div class="feed-item">${esc(l)}</div>`).join("")
     : `<div class="muted">No brief for today yet.</div>`;
-  $("calendar-page").innerHTML = $("timeline").innerHTML;
 }
 
 function ask(title, body, okLabel) {
@@ -513,6 +565,7 @@ function renderHalt(h) {
   if ($("sf-resume")) $("sf-resume").disabled = !h.can_resume;
   if ($("sf-resume-note")) $("sf-resume-note").textContent = on && h.stop_file_present ? "Delete the STOP file first." : (on ? "" : "Nothing to resume.");
   if ($("sf-stopfile")) $("sf-stopfile").textContent = h.stop_file || "";
+  if ($("ft-safety")) { $("ft-safety").textContent = on ? "STOP active" : "Armed"; $("ft-safety").className = on ? "bad-txt" : "ok-txt"; }
   if ($("sf-hotkey") && h.hotkey) {
     const hk = h.hotkey.state;
     $("sf-hotkey").textContent = hk === "active" ? "active" : hk === "failed" ? `not available (${h.hotkey.error || "in use"})` : hk;
@@ -575,7 +628,27 @@ function resumeFlow() {
 
 async function refreshSafety() {
   const r = await call("safety_info");
-  if (r && r.ok) renderSafety(r.data);
+  if (r && r.ok) {
+    renderSafety(r.data);
+    v3.renderShield($("shield-svg"), $("sec-cards"), r.data, lastStatus ? lastStatus.policy_ok : undefined);
+  }
+}
+
+function renderDiagram() {
+  const live = (lastProviders || []).filter((p) => p.state === "connected")[0];
+  if ($("page-agents") && $("page-agents").classList.contains("active")) v3.renderNetDiagram($("nd-svg"), lastAgentsList, live ? live.name : "");
+}
+
+// slower, read-only extras (local AI, data sources): every 30 s
+async function refreshSlow() {
+  const [la, src, info] = await Promise.all([call("local_ai"), call("sources"), slowAt ? null : call("app_info")]);
+  slowAt = Date.now();
+  if (la && la.ok && la.data && la.data.ollama) { lastLocalAi = la.data; renderLlms(lastProviders); }
+  if (src && src.ok && src.data && Array.isArray(src.data.sources)) { lastSources = src.data.sources; v3.renderSources($("nd-sources"), lastSources); }
+  if (info && info.ok) {
+    if ($("app-version")) $("app-version").textContent = `v${info.data.version}`;
+    if ($("operator-name")) $("operator-name").textContent = info.data.operator;
+  }
 }
 
 async function refresh() {
@@ -590,9 +663,11 @@ async function refresh() {
     call("readiness"),
     call("settings_get"),
   ]);
+  if (st && st.ok) lastStatus = st.data;
+  if (Date.now() - slowAt > 30000) refreshSlow();
   const hs = await call("halt_status");
   if (hs && hs.ok) renderHalt(hs.data);
-  if ($("page-safety") && $("page-safety").classList.contains("active")) refreshSafety();
+  if (["safety", "security"].some((r) => $(`page-${r}`) && $(`page-${r}`).classList.contains("active"))) refreshSafety();
   if (sets && sets.ok) {
     renderSettings(sets.data);
     voice.ttsFlag = !!sets.data.speaking;
@@ -600,13 +675,13 @@ async function refresh() {
     if (!voice.ttsFlag && Date.now() - voice.speakStarted > 2500) voice.speakingUntil = 0;
     pushVoice();
   }
+  if (met.ok) renderMetrics(met.data);
   if (st.ok) {
     renderHealth(st.data, agents.ok ? agents.data.agents : [], llms.ok ? llms.data.providers : [], mem.ok ? mem.data : null);
     if (/still starting|not responding/.test($("banner").textContent)) banner("");
   } else banner(st.error === "offline" ? "offline" : `Jarvis core not responding (${st.error || "status"}) — retrying`, "warn");
   if (ready && ready.ok) renderReadiness(ready.data);
   else if (core3d) core3d.setHealth(0);
-  if (met.ok) renderMetrics(met.data);
   if (feed.ok) renderFeed(feed.data.items, $("feed-search").value);
   if (mem.ok) renderMemory(mem.data);
   if (llms.ok) renderLlms(llms.data.providers);
@@ -657,9 +732,30 @@ function wire() {
     else if ((ev.key === "f" || ev.key === "F") && !ev.ctrlKey && !ev.altKey && !ev.metaKey) setFocus(!$("page-home").classList.contains("focus"));
   });
   document.querySelectorAll("#nav button").forEach((b) => {
-    b.onclick = () => { setRoute(b.dataset.route); if (b.dataset.route === "safety") refreshSafety(); };
+    b.onclick = () => setRoute(b.dataset.route);
   });
   $("btn-estop").onclick = () => emergencyStop("button");
+  $("btn-focus-side").onclick = () => { setRoute("home"); setFocus(!$("page-home").classList.contains("focus")); };
+  $("top-grid").onclick = () => setRoute("skills");
+  $("top-settings").onclick = () => setRoute("settings");
+  $("top-bell").onclick = () => setRoute("agents");
+  $("feed-all").onclick = () => setRoute("conversations");
+  $("agents-all").onclick = () => setRoute("agents");
+  $("mem-details").onclick = () => setRoute("memory");
+  document.querySelectorAll("[data-goto]").forEach((b) => { b.onclick = () => setRoute(b.dataset.goto); });
+  $("q-task").onclick = () => { setRoute("home"); $("cmd-input").focus(); };
+  $("q-workflow").onclick = () => setRoute("workflows");
+  $("q-folder").onclick = async () => { const r = await call("open_folder", "workspace"); if (!r.ok) bannerErr(r.error || "could not open workspace"); };
+  $("btn-brief").onclick = async () => {
+    const r = await call("brief");
+    const text = r && r.ok ? String(r.data?.text || "").trim() : "";
+    if (!text) { banner("No brief for today yet — Session Start or Dry-run Workday writes one.", "warn"); return; }
+    banner("Executive briefing…");
+    speak(text.replace(/[#*_`>|-]+/g, " ").replace(/\s+/g, " ").slice(0, 700));
+  };
+  document.addEventListener("keydown", (ev) => {
+    if (ev.ctrlKey && !ev.altKey && !ev.shiftKey && (ev.key === "k" || ev.key === "K")) { ev.preventDefault(); $("feed-search").focus(); }
+  });
   // In-window fallback for the STOP hotkey (the global one is registered by Python).
   document.addEventListener("keydown", (ev) => {
     if (ev.ctrlKey && ev.altKey && ev.shiftKey && (ev.key === "S" || ev.key === "s")) {
@@ -778,11 +874,14 @@ function glFallback(canvas, what) {
 
 async function boot() {
   window.__jarvisBooted = true;
-  try { mountNavIcons($("nav")); } catch (e) { uiLog("error", `nav icons: ${e && e.stack ? e.stack : e}`, "boot"); }
+  try { v3.mountIcons(document); } catch (e) { uiLog("error", `v3 icons: ${e && e.stack ? e.stack : e}`, "boot"); }
+  // v3: flat neon SVG nav icons. The old per-button WebGL icons used one WebGL context each (16 with the
+  // new pages, Chromium's limit), so they are no longer mounted; only the hero core and agent orbit use WebGL.
+  try { v3.mountNavSvg($("nav")); } catch (e) { uiLog("error", `nav icons: ${e && e.stack ? e.stack : e}`, "boot"); }
   // Home AI Core: agents orbit it as 3D nodes (falls back to the plain core, then to a message).
   try {
     core3d = mountAgentOrbit($("sphere"), { host: $("core-stage"), labels: $("home-orbit-labels"), padTop: 44, padBottom: 8,
-      obstacles: () => [...document.querySelectorAll("#core-stage .hud-chip, #core-stage .hud-title, #btn-focus")],
+      obstacles: () => [...document.querySelectorAll("#core-stage .hud-chip, #core-stage .hud-title, #btn-focus, #greet, #core-stage .core-caption")],
       onSelect: (id) => selectAgent(id, true),
       onLost: () => glFallback($("sphere"), "AI Core") });
     if (!core3d.ok) core3d = mountCore($("sphere"));

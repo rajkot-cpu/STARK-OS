@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-11-18 — v3.0.0 Command Center restyle (branch `ui-v3-restyle`)
+Reference-mockup restyle (deep navy, neon glass panels). Real data or an honest "not connected" state only.
+Previous exe kept as `apps\Jarvis.exe.bak-20261118-prephase2`.
+
+Added
+- `ui/css/v3.css`, `ui/js/v3.js` — new top bar (reactor logo, tagline, status pill, big clock, search Ctrl+K, bell = approvals/errors, operator chip, EMERGENCY STOP kept), icon nav, voice card (waveform, mic orb, Focus Mode), AI Core Overview rows, rich Live Intelligence Feed, 2x3 Active Agents, Mission Timeline (today's audit events), Quick Commands grid, ring gauges + CPU sparkline + uptime, Memory Insights, LLM Status (incl. local Ollama), Manage Providers, footer tiles + Talk pill + Executive Briefing.
+- Agents page: neon network diagram (input layer → central LLM adapter → 8 agents with distinct colours/shapes, animated flows, real states) and a Data Sources layer (web search, memory, files, MCP, market data = not connected).
+- Memory page: brain map linked to real recent files and source folders, Neural Processes / System Analytics / sources ring.
+- Security page: AI Shield bound to the audit chain, STOP state, Credential Manager and R1–R4 policy.
+- Trading page (PAPER — no live orders): statistical validation, technical analysis, order book, news sentiment, portfolio risk and Markov regime layouts with "connect a data source" empty states. No order calls exist.
+- `ui_sources.py` (Ollama detection, data sources), bridge `local_ai`, `sources`, `app_info`; `metrics.snapshot` adds RAM GB, network rate, Jarvis uptime; `memory_index.build` adds per-source counts, bytes, recent files.
+- Hero core: thin lat-long wireframe globe, holographic pedestal rings, caption and greeting bubble.
+
+Changed
+- Nav icons are flat SVG (the per-button WebGL icons used one WebGL context each; with the new pages that reached Chromium's 16-context limit). WebGL is now only the hero core and the agent orbit.
+- `open_folder` accepts a path relative to the Jarvis folder (Quick Command "Open Workspace").
+
 ## 2026-11-18 — Master Upgrade Phase 1: Safety & Governance (branch `jarvis-upgrade`)
 Backup before changes: `C:\Users\rajk1\jarvis-backups\jarvis-pre-upgrade-20261118-005811.zip`
 (663 files, 1.03 GB; excludes the older `backups\` copy, old `Jarvis.exe.bak-*` files, build/dist and `__pycache__`).

@@ -37,6 +37,10 @@ def _speakable(text: str, limit: int = 200) -> str:
     return cut[: end + 1] if end > 60 else cut.rsplit(" ", 1)[0] + "…"
 
 
+APP_VERSION = "3.0.0"
+OPERATOR_NAME = "Dr. Chandan Kumar"
+
+
 def log_error(root, source: str, message: str, level: str = "error") -> None:
     """Append one line to logs/ui-errors.log (JS errors, bridge exceptions, crashed threads)."""
     try:
@@ -234,6 +238,27 @@ class BridgeApi:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    def local_ai(self) -> dict:
+        """Ollama install / models (read-only, local only)."""
+        try:
+            import ui_sources
+
+            return {"ok": True, "data": ui_sources.local_ai()}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def sources(self) -> dict:
+        """Data sources the agents can use; market data is never connected in this build."""
+        try:
+            import ui_sources
+
+            return {"ok": True, "data": {"sources": ui_sources.data_sources(self.root)}}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def app_info(self) -> dict:
+        return {"ok": True, "data": {"version": APP_VERSION, "operator": OPERATOR_NAME}}
+
     def llms(self) -> dict:
         try:
             from llm_providers import probe_all
@@ -369,7 +394,8 @@ class BridgeApi:
         """Open a folder inside jarvis/workspace in Explorer (nothing outside the workspace)."""
         try:
             ws = (self.root / "workspace").resolve()
-            p = Path(str(path or "")).resolve()
+            p = Path(str(path or ""))
+            p = (p if p.is_absolute() else self.root / p).resolve()
             if not (p == ws or ws in p.parents) or not p.is_dir():
                 return {"ok": False, "error": "only folders inside the Jarvis workspace can be opened"}
             import os

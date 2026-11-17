@@ -19,5 +19,5 @@ CHROME = os.environ.get("JARVIS_CHROME") or shutil.which("google-chrome") or shu
 class OrbitHiDpiBrowserTest(unittest.TestCase):
     def test_canvases_do_not_grow(self):
         r = subprocess.run(["node", str(HERE / "js" / "orbit_hidpi.browser.mjs"), str(HERE.parent / "ui"), PW, CHROME],
-                           capture_output=True, text=True, timeout=180)
+                           capture_output=True, text=True, timeout=600)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)

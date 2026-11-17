@@ -252,8 +252,11 @@ class HaltController:
         self._watch = threading.Thread(target=loop, name="halt-stopfile-watch", daemon=True)
         self._watch.start()
 
-    def stop_watch(self) -> None:
+    def stop_watch(self, join_timeout: float = 2.0) -> None:
         self._watch_stop.set()
+        w = self._watch
+        if w and w.is_alive() and w is not threading.current_thread():
+            w.join(join_timeout)   # let an in-flight STOP finish writing state/audit
 
     def check_once(self) -> bool:
         """Poll once (tests / startup): STOP file present -> trigger stop. Returns stopped."""

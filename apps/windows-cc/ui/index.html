@@ -5,25 +5,35 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>JARVIS Command Center</title>
   <link rel="stylesheet" href="css/hud.css" />
+  <link rel="stylesheet" href="css/v3.css" />
 </head>
 <body>
   <div id="app">
     <header class="topbar">
       <div class="brand">
-        <span class="brand-mark"></span>
-        <div>
-          <div class="brand-title">JARVIS</div>
-          <div class="brand-sub">COMMAND CENTER</div>
+        <span class="brand-mark reactor" aria-hidden="true"><i></i><i></i><i></i></span>
+        <div class="brand-text">
+          <div class="brand-title">JARVIS <span class="bt-cc">COMMAND CENTER</span></div>
+          <div class="brand-sub">Smarter • Faster • Always With You</div>
         </div>
-        <span id="sys-pill" class="pill">…</span>
+        <span id="sys-pill" class="pill" title="From Jarvis readiness, POLICY and STOP state">…</span>
       </div>
-      <div id="clock" class="clock">—</div>
+      <div class="clockbox">
+        <div id="clock-date" class="clock-date">—</div>
+        <div id="clock" class="clock">—</div>
+      </div>
       <button id="btn-estop" class="estop" title="Emergency STOP — halts all agents and automation (also Ctrl+Alt+Shift+S, typing &quot;stop&quot;, or a STOP file)">
         <span class="estop-dot"></span><span class="estop-label">EMERGENCY STOP</span><span class="estop-key">Ctrl+Alt+Shift+S</span>
       </button>
       <div class="top-right">
-        <input id="feed-search" type="search" placeholder="Search feed…" />
-        <span class="operator">Operator · Chandan</span>
+        <label class="search-wrap"><i class="ic" data-ic="search"></i><input id="feed-search" type="search" placeholder="Search anything… (Ctrl+K)" title="Filters the Live Intelligence Feed" /></label>
+        <button class="top-ico" id="top-grid" title="Tools &amp; Skills"><i class="ic" data-ic="grid"></i></button>
+        <button class="top-ico" id="top-bell" title="Approvals and errors needing you"><i class="ic" data-ic="bell"></i><span id="bell-count" class="bell-count hidden">0</span></button>
+        <button class="top-ico" id="top-settings" title="Settings"><i class="ic" data-ic="settings"></i></button>
+        <div class="user-chip" title="Operator">
+          <span class="uc-avatar">CK</span>
+          <span class="uc-text"><b id="operator-name">Dr. Chandan Kumar</b><small>Operator · Commander</small></span>
+        </div>
       </div>
     </header>
 
@@ -35,18 +45,24 @@
         <button data-route="tasks">Tasks <span class="badge" id="badge-tasks">0</span></button>
         <button data-route="calendar">Calendar</button>
         <button data-route="memory">Memory</button>
-        <button data-route="conversations">Conversations</button>
+        <button data-route="conversations">Conversations <span class="badge" id="badge-conv">0</span></button>
         <button data-route="knowledge">Knowledge Base</button>
         <button data-route="skills">Tools &amp; Skills</button>
         <button data-route="workflows">Workflows</button>
+        <button data-route="security">Security</button>
+        <button data-route="trading">Trading <span class="badge paper">PAPER</span></button>
         <button data-route="safety" class="nav-safety">Safety &amp; STOP</button>
         <button data-route="settings">Settings</button>
       </nav>
-      <div class="voice-side">
-        <div id="voice-state">Voice idle</div>
-        <button id="btn-listen" class="mic">Tap to Speak</button>
-        <button id="btn-stop-voice" class="mic stop-voice">Stop Speaking</button>
-        <div id="wake-side" class="wake-side muted">Hey Jarvis: off</div>
+      <div class="voice-side voice-card">
+        <div class="vc-head"><span>VOICE STATUS</span><span id="wake-side" class="wake-side muted">Hey Jarvis: off</span></div>
+        <div id="vc-wave" class="vc-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <button id="btn-listen" class="mic mic-orb" title="Tap to Speak"><span class="mic-ring"></span><i class="ic" data-ic="mic"></i></button>
+        <div id="voice-state" class="vc-state">Tap to Speak</div>
+        <div class="vc-row">
+          <button id="btn-stop-voice" class="mic stop-voice">Stop Speaking</button>
+          <button id="btn-focus-side" class="mic focus-side" title="Focus mode: the AI Core fills the screen (F)">Focus Mode</button>
+        </div>
         <label class="mute-row"><input type="checkbox" id="chk-mute" /> Mute</label>
       </div>
     </aside>
@@ -56,7 +72,7 @@
         <div class="hb-text"><strong>EMERGENCY STANDBY</strong> — all automation is halted. <span id="hb-detail"></span></div>
         <button id="hb-resume" class="hb-resume">Manual Override · Resume…</button>
       </div>
-      <!-- HOME -->
+      <!-- HOME / COMMAND CENTER -->
       <section id="page-home" class="page active">
         <form id="cmd-bar" class="cmd-bar panel" autocomplete="off">
           <input id="cmd-input" placeholder="Tell Jarvis what to do — e.g. &quot;build me a todo app&quot;, &quot;research GST on medicines&quot;, &quot;start builder make a clinic website&quot;" />
@@ -65,7 +81,8 @@
         </form>
         <div class="hero">
           <div class="health panel hero-side">
-            <h3>Jarvis readiness</h3>
+            <h3>AI Core Overview</h3>
+            <ul id="health-list" class="ov-list"></ul>
             <div class="ready-wrap">
               <div id="ready-ring" class="ready-ring" style="--pct: 0" aria-label="Jarvis readiness">
                 <div class="ready-inner">
@@ -78,17 +95,18 @@
             <ul id="ready-miss" class="ready-miss-list"></ul>
             <details class="ready-details"><summary>All checks</summary><ul id="ready-list"></ul></details>
             <ul id="ready-extras" class="ready-extras"></ul>
-            <h3 class="health-sub">AI Core Overview</h3>
-            <ul id="health-list"></ul>
           </div>
           <div class="core panel hero-core">
             <div id="core-stage" class="core-stage">
               <canvas id="sphere" aria-label="AI Core with agents" title="Click an agent to open it"></canvas>
+              <div class="pedestal" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
               <div id="home-orbit-labels" class="orbit-labels"></div>
               <div class="hud-title" id="hud-title">
-                <span class="ht-main">J.A.R.V.I.S</span>
+                <span class="ht-main">JARVIS AI CORE <em id="app-version">v3.0.0</em></span>
                 <span class="ht-sub"><i class="ht-line"></i>AI CORE<span class="ht-sep">·</span><b id="hud-sys" class="ht-sys">ONLINE</b><i class="ht-line"></i></span>
               </div>
+              <div id="greet" class="greet-bubble">Hello <b>Dr. Chandan Kumar</b>! How can I help you today?</div>
+              <div class="core-caption">Your Personal AI Command Center</div>
               <button id="btn-focus" class="hud-focus" type="button" title="Focus mode: the AI Core fills the screen (F, Esc to exit)" aria-pressed="false"><span class="fx-ico"></span><span class="fx-txt">Focus</span></button>
               <div class="hud-chip tl"><small>Readiness</small><b id="hud-ready">0%</b><i class="hud-bar"><span id="hud-ready-bar"></span></i></div>
               <div class="hud-chip tr"><small>Agents active</small><b id="hud-agents">0 / 8</b></div>
@@ -97,49 +115,66 @@
             </div>
           </div>
           <div class="feed panel hero-side">
-            <h3>Live Intelligence Feed</h3>
+            <h3>Live Intelligence Feed <span class="live-pill">LIVE</span></h3>
             <div id="feed-list" class="feed-scroll"></div>
+            <button id="feed-all" class="view-all">View All Feeds ›</button>
           </div>
         </div>
         <button id="more-cue" class="more-cue" type="button">▾ Agents · Mission timeline · Quick commands · System</button>
         <div class="mid" id="home-more">
           <div class="panel">
-            <h3>Active Agents</h3>
-            <div id="agents-grid" class="agents-grid"></div>
+            <h3>Active Agents <button class="h3-link" id="agents-all">View All ›</button></h3>
+            <div id="agents-mini" class="agents-mini"></div>
           </div>
           <div class="panel">
-            <h3>Mission Timeline</h3>
-            <div id="timeline" class="scroll"></div>
+            <h3>Mission Timeline <span class="h3-sub">Today</span></h3>
+            <div id="mission" class="mission scroll"></div>
           </div>
           <div class="panel">
             <h3>Quick Commands</h3>
-            <div class="qcmds">
-              <button id="cmd-session">Session Start</button>
-              <button id="cmd-calendar">Open Calendar</button>
-              <button id="cmd-voice">Start Voice Chat</button>
-              <button id="cmd-dry">Dry-run Workday</button>
-              <button id="cmd-screen" class="danger">Read My Screen (R3)</button>
-              <button id="cmd-workday" class="danger">Start Workday</button>
+            <div class="qcmds qgrid">
+              <button id="q-task"><i class="ic" data-ic="plus"></i>Start New Task</button>
+              <button id="cmd-calendar"><i class="ic" data-ic="calendar"></i>Open Calendar</button>
+              <button id="cmd-voice"><i class="ic" data-ic="mic"></i>Start Voice Chat</button>
+              <button id="q-workflow"><i class="ic" data-ic="flow"></i>Run Workflow</button>
+              <button id="q-folder"><i class="ic" data-ic="terminal"></i>Open Workspace</button>
+              <button id="cmd-screen" class="danger"><i class="ic" data-ic="screen"></i>Take Screenshot (R3)</button>
+              <button id="cmd-session"><i class="ic" data-ic="play"></i>Session Start</button>
+              <button id="cmd-dry"><i class="ic" data-ic="check"></i>Dry-run Workday</button>
+              <button id="cmd-workday" class="danger"><i class="ic" data-ic="bolt"></i>Start Workday (R3)</button>
             </div>
           </div>
         </div>
         <div class="bottom">
           <div class="panel">
-            <h3>System Monitor</h3>
-            <div class="usage-caption">PC usage</div>
-            <div class="gauges">
-              <div class="gauge"><span id="g-cpu">0</span>%<small>CPU usage</small></div>
-              <div class="gauge"><span id="g-ram">0</span>%<small>RAM usage</small></div>
-              <div class="gauge"><span id="g-disk">0</span>%<small>Disk usage</small></div>
+            <h3>System Monitor <span class="h3-sub">This PC</span></h3>
+            <div class="rings">
+              <div class="ring-g" style="--c:#38d4ff"><svg viewBox="0 0 64 64"><circle class="trk" cx="32" cy="32" r="26"/><circle id="rg-cpu" class="val" cx="32" cy="32" r="26"/></svg><b><span id="g-cpu">0</span>%</b><small>CPU</small></div>
+              <div class="ring-g" style="--c:#3dff9a"><svg viewBox="0 0 64 64"><circle class="trk" cx="32" cy="32" r="26"/><circle id="rg-ram" class="val" cx="32" cy="32" r="26"/></svg><b><span id="g-ram">0</span>%</b><small>RAM</small></div>
+              <div class="ring-g" style="--c:#ff9d2e"><svg viewBox="0 0 64 64"><circle class="trk" cx="32" cy="32" r="26"/><circle id="rg-disk" class="val" cx="32" cy="32" r="26"/></svg><b><span id="g-disk">0</span>%</b><small>Disk C:</small></div>
+              <div class="ring-g" style="--c:#5b8cff"><svg viewBox="0 0 64 64"><circle class="trk" cx="32" cy="32" r="26"/><circle id="rg-net" class="val" cx="32" cy="32" r="26"/></svg><b id="g-net">—</b><small>Network</small></div>
             </div>
+            <svg id="cpu-spark" class="spark" viewBox="0 0 120 24" preserveAspectRatio="none"><polyline points="" /></svg>
+            <div class="mon-foot small"><span>CPU, last 2 min</span><span>Jarvis uptime <b id="g-uptime">—</b></span></div>
           </div>
           <div class="panel">
             <h3>Memory Insights</h3>
-            <div id="memory-stats"></div>
+            <div class="mem-ins">
+              <svg class="brain-ico" viewBox="0 0 100 80" aria-hidden="true"><use href="#brain-art"/></svg>
+              <div id="memory-stats"></div>
+            </div>
+            <button class="view-all" id="mem-details">View Details ›</button>
           </div>
           <div class="panel">
             <h3>LLM Status</h3>
             <div id="llm-grid" class="llm-grid"></div>
+          </div>
+          <div class="panel manage-prov">
+            <h3>Manage Providers</h3>
+            <div id="prov-keys" class="small muted"></div>
+            <button class="mp-btn" data-goto="settings"><i class="ic" data-ic="plus"></i>Add / Remove Providers</button>
+            <button class="mp-btn" data-goto="settings"><i class="ic" data-ic="sliders"></i>Configure Models</button>
+            <button class="mp-btn" data-goto="settings"><i class="ic" data-ic="settings"></i>Set Preferences</button>
           </div>
         </div>
       </section>
@@ -147,6 +182,14 @@
       <!-- OTHER ROUTES -->
       <section id="page-core" class="page"><h2>AI Core</h2><div id="core-page"></div></section>
       <section id="page-agents" class="page"><h2>Agents</h2><p class="muted small">Type or say a command (e.g. "Jarvis, build me a hello-world page called test-site") — the right agent starts at once. Builder writes only inside <code>jarvis\workspace</code>; overwrite, delete and running code ask you first.</p>
+        <div class="netdiag panel" id="netdiag">
+          <div class="nd-layer nd-input"><span class="nd-title">USER INPUT LAYER</span><span class="nd-ins"><i class="ic" data-ic="keyboard"></i>Keyboard<i class="ic" data-ic="mic"></i>Voice<i class="ic" data-ic="terminal"></i>Command bar</span></div>
+          <div class="nd-stage">
+            <svg id="nd-svg" class="nd-svg" viewBox="0 0 1000 420" preserveAspectRatio="xMidYMid meet" aria-label="Agents connected to the central LLM adapter"></svg>
+          </div>
+          <div class="nd-flow"><span class="nd-flow-t">WORKFLOW</span><span class="nd-node">Research</span><i></i><span class="nd-node">Coding / Builder</span><i></i><span class="nd-node">Memory</span><span class="muted small">— Jarvis routes each command to one agent; chained workflows are not enabled yet.</span></div>
+          <div class="nd-layer nd-sources"><span class="nd-title">DATA SOURCES LAYER</span><div id="nd-sources" class="nd-src-row"></div></div>
+        </div>
         <div class="orbit-wrap panel">
           <div class="orbit-stage">
             <canvas id="agents-orbit" aria-label="Agents orbiting the AI Core"></canvas>
@@ -155,14 +198,31 @@
           </div>
           <div id="orbit-detail" class="orbit-detail"><div class="muted">Click an agent node to see its recent steps.</div></div>
         </div>
-        <div id="agents-page"></div></section>
+        <div id="agents-page" class="agents-grid"></div></section>
       <section id="page-tasks" class="page"><h2>Tasks</h2><p class="muted">Task list from Task agent / checklist files when present.</p><div id="tasks-page"></div></section>
-      <section id="page-calendar" class="page"><h2>Calendar</h2><div id="calendar-page"></div></section>
-      <section id="page-memory" class="page"><h2>Memory</h2><div id="memory-page"></div></section>
+      <section id="page-calendar" class="page"><h2>Calendar</h2><div id="timeline" class="scroll"></div><div id="calendar-page"></div></section>
+      <section id="page-memory" class="page"><h2>Memory</h2>
+        <div class="mem-map panel">
+          <svg id="mem-svg" class="mem-svg" viewBox="0 0 1000 460" preserveAspectRatio="xMidYMid meet" aria-label="Memory map"></svg>
+          <div class="mem-float mf-proc"><h4>Neural Processes</h4><div id="mf-proc" class="small"></div></div>
+          <div class="mem-float mf-an"><h4>System Analytics</h4><div id="mf-an" class="small"></div></div>
+          <div class="mem-float mf-ring"><div id="mf-ring" class="ready-ring" style="--pct:0"><div class="ready-inner"><span class="ready-num" id="mf-ring-n">0</span><small>sources</small></div></div><div id="mf-ring-t" class="small muted"></div></div>
+        </div>
+        <div id="memory-page"></div></section>
       <section id="page-conversations" class="page"><h2>Conversations</h2><div id="conv-page" class="scroll"></div></section>
       <section id="page-knowledge" class="page"><h2>Knowledge Base</h2><div id="knowledge-page"></div></section>
       <section id="page-skills" class="page"><h2>Tools &amp; Skills</h2><div id="skills-page"></div></section>
       <section id="page-workflows" class="page"><h2>Workflows</h2><div id="workflows-page"></div></section>
+      <section id="page-security" class="page"><h2>Security</h2>
+        <div class="shield-wrap panel">
+          <svg id="shield-svg" class="shield-svg" viewBox="0 0 1000 440" preserveAspectRatio="xMidYMid meet" aria-label="AI Shield"></svg>
+        </div>
+        <div id="sec-cards" class="sec-cards"></div>
+      </section>
+      <section id="page-trading" class="page"><h2>Trading</h2>
+        <div class="paper-banner" role="note"><b>PAPER — no live orders.</b> Analysis and paper trading only. Jarvis cannot place, modify or cancel real orders; live trading needs a separate R4 approval you have not given. <span id="tr-source" class="tr-src">Market data: not connected</span></div>
+        <div id="trading-grid" class="tr-grid"></div>
+      </section>
       <section id="page-safety" class="page"><h2>Safety &amp; Emergency STOP</h2>
         <p class="muted small">Module 1 of the Master Upgrade. STOP halts every agent, queued approval, shell command, video render, wake word and speech. Nothing restarts on its own — only you can resume, by typing RESUME.</p>
         <div class="safety-grid">
@@ -221,6 +281,11 @@
             <div id="set-voice-status" class="small"></div>
             <button id="set-voice-test" class="set-btn">Test voice</button>
           </div>
+          <div class="panel" id="set-providers-panel">
+            <h3>AI providers</h3>
+            <div id="set-providers" class="small"></div>
+            <p class="muted small">Keys live in Windows Credential Manager (<code>JARVIS/&lt;KEY&gt;</code>). To add or replace one, put it in <code>secrets\api_keys.env</code> and run <code>python secrets_store.py migrate</code>; Jarvis never shows key values.</p>
+          </div>
           <div class="panel">
             <h3>MCP tool servers</h3>
             <div id="set-mcp" class="small"></div>
@@ -236,9 +301,23 @@
     </main>
 
     <footer class="talkbar">
-      <button id="btn-talk" class="talk">TALK TO JARVIS</button>
+      <div class="foot-tiles">
+        <div class="ftile"><i class="ic" data-ic="wifi"></i><span><small>Network</small><b id="ft-net">—</b></span></div>
+        <div class="ftile"><i class="ic" data-ic="shield"></i><span><small>Safety</small><b id="ft-safety">—</b></span></div>
+      </div>
+      <button id="btn-talk" class="talk"><span class="tk-wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="tk-text"><b>TALK TO JARVIS</b><small id="talk-sub">Tap to talk</small></span></button>
       <span id="banner" class="banner"></span>
+      <button id="btn-brief" class="brief-btn" title="Read today's brief aloud">Executive Briefing ▶</button>
     </footer>
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+      <radialGradient id="brainGlow" cx="50%" cy="45%" r="60%"><stop offset="0" stop-color="#b9a4ff" stop-opacity=".95"/><stop offset=".55" stop-color="#4f7dff" stop-opacity=".55"/><stop offset="1" stop-color="#1a2a6a" stop-opacity="0"/></radialGradient>
+      <symbol id="brain-art" viewBox="0 0 100 80">
+        <ellipse cx="50" cy="40" rx="46" ry="36" fill="url(#brainGlow)" opacity=".55"/>
+        <path d="M50 12c-6-6-18-5-21 3-8-1-14 6-12 13-6 4-6 13 0 17-2 8 5 15 13 14 3 7 13 9 20 4 7 5 17 3 20-4 8 1 15-6 13-14 6-4 6-13 0-17 2-7-4-14-12-13-3-8-15-9-21-3z" fill="none" stroke="#9fd0ff" stroke-width="1.6"/>
+        <path d="M50 12v58M36 22c4 4 4 9 0 13M64 22c-4 4-4 9 0 13M28 44c5-2 10 0 12 5M72 44c-5-2-10 0-12 5M38 60c3-4 8-5 12-3M62 60c-3-4-8-5-12-3" fill="none" stroke="#c9b8ff" stroke-width="1.1" opacity=".85"/>
+        <g fill="#e8f6ff"><circle cx="36" cy="22" r="1.6"/><circle cx="64" cy="35" r="1.6"/><circle cx="28" cy="44" r="1.4"/><circle cx="72" cy="44" r="1.4"/><circle cx="50" cy="57" r="1.8"/><circle cx="50" cy="28" r="1.5"/></g>
+      </symbol>
+    </defs></svg>
   </div>
 
   <div id="r3-modal" class="modal hidden" role="dialog" aria-modal="true">
